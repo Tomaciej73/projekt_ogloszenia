@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { CreateListingDto } from "./dto/create-listing.dto";
 import type { UpdateListingDto } from "./dto/update-listing.dto";
+import type { Prisma } from "@prisma/client";
 
 @Injectable()
 export class ListingsService {
@@ -15,8 +16,8 @@ export class ListingsService {
         price: dto.price,
         currency: dto.currency ?? "PLN",
         category: dto.category,
-        attributes: dto.attributes ?? {},
-        location: dto.location ?? {},
+        attributes: (dto.attributes ?? {}) as Prisma.InputJsonValue,
+        location: (dto.location ?? {}) as Prisma.InputJsonValue,
         photoUrls: dto.photoUrls ?? [],
         deliveryOptions: dto.deliveryOptions ?? [],
         status: dto.status ?? "draft",
@@ -47,20 +48,22 @@ export class ListingsService {
       return null;
     }
 
+    const data: Prisma.ListingDraftUpdateInput = {};
+
+    if (dto.title !== undefined) data.title = dto.title;
+    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.price !== undefined) data.price = dto.price;
+    if (dto.currency !== undefined) data.currency = dto.currency;
+    if (dto.category !== undefined) data.category = dto.category;
+    if (dto.attributes !== undefined) data.attributes = dto.attributes as Prisma.InputJsonValue;
+    if (dto.location !== undefined) data.location = dto.location as Prisma.InputJsonValue;
+    if (dto.photoUrls !== undefined) data.photoUrls = dto.photoUrls;
+    if (dto.deliveryOptions !== undefined) data.deliveryOptions = dto.deliveryOptions;
+    if (dto.status !== undefined) data.status = dto.status;
+
     return this.prisma.listingDraft.update({
       where: { id },
-      data: {
-        ...(dto.title !== undefined && { title: dto.title }),
-        ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.price !== undefined && { price: dto.price }),
-        ...(dto.currency !== undefined && { currency: dto.currency }),
-        ...(dto.category !== undefined && { category: dto.category }),
-        ...(dto.attributes !== undefined && { attributes: dto.attributes }),
-        ...(dto.location !== undefined && { location: dto.location }),
-        ...(dto.photoUrls !== undefined && { photoUrls: dto.photoUrls }),
-        ...(dto.deliveryOptions !== undefined && { deliveryOptions: dto.deliveryOptions }),
-        ...(dto.status !== undefined && { status: dto.status }),
-      },
+      data,
       include: { media: true },
     });
   }

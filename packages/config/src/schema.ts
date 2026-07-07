@@ -16,7 +16,8 @@ export const envSchema = z.object({
   S3_FORCE_PATH_STYLE: z
     .string()
     .transform((v: string) => v === "true")
-    .default("false"),
+    .pipe(z.boolean())
+    .default(true),
 
   // Authentication
   JWT_SECRET: z.string().min(32),
@@ -31,13 +32,11 @@ export const envSchema = z.object({
   API_PORT: z
     .string()
     .transform(Number)
-    .pipe(z.number().int().positive())
-    .default("3001"),
+    .pipe(z.number().int().positive()),
   WEB_PORT: z
     .string()
     .transform(Number)
-    .pipe(z.number().int().positive())
-    .default("3000"),
+    .pipe(z.number().int().positive()),
   LOG_LEVEL: z
     .enum(["debug", "info", "warn", "error"])
     .default("info"),

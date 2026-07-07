@@ -12,6 +12,7 @@ Users create listing drafts once and publish/manage them across multiple marketp
 - Do not store secrets in code.
 - Do not log secrets, tokens, cookies, credentials or authorization headers.
 - Use environment variables validated at startup.
+- Never hardcode credentials, passwords, API keys, tokens, URLs with embedded credentials, or connection strings in any source file (TypeScript, JavaScript, HTML, CSS, JSON configs). All such values must come from environment variables (`.env` file). Even test/dev values must not appear in source code.
 - Keep changes small and incremental.
 - Prefer provider-agnostic architecture over provider-specific shortcuts.
 - Use official APIs first.

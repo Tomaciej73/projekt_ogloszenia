@@ -10,8 +10,6 @@ out/
 coverage/
 
 # env / secrets
-.env
-.env.*
 !.env.example
 
 # local db/storage

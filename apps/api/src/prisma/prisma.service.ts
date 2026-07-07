@@ -1,5 +1,4 @@
-import { Injectable } from "@nestjs/common";
-import type { OnModuleInit, OnModuleDestroy } from "@nestjs/common";
+import { Injectable, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 
 @Injectable()
@@ -8,11 +7,7 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   constructor() {
-    super({
-      datasourceUrl:
-        process.env["DATABASE_URL"] ??
-        "postgresql://multiportal:multiportal@localhost:5432/multiportal",
-    });
+    super();
   }
 
   async onModuleInit(): Promise<void> {
