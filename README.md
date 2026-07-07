@@ -81,6 +81,165 @@ Do not implement scraping, private APIs, browser automation, cookie-based login 
 - Environment variables validated at application startup.
 - `.env.example` must contain placeholders only.
 
+## Local Development Setup Guide
+
+Follow these steps to set up the project on a Windows machine with PowerShell.
+
+### 1. Prerequisites
+
+Install the required tools:
+
+- **Node.js 24 LTS** — Download from https://nodejs.org (choose LTS)
+- **pnpm** — Install via npm after Node.js is installed:
+  ```powershell
+  npm install -g pnpm
+  ```
+- **Git** — Download from https://git-scm.com
+- **Docker Desktop** — Download from https://www.docker.com/products/docker-desktop (includes Docker Compose)
+- **WSL 2** — Docker Desktop requires WSL 2 on Windows. Install via PowerShell as Administrator:
+  ```powershell
+  wsl --install
+  ```
+
+### 2. Verify Installations
+
+Run these commands and confirm each returns a version number:
+
+```powershell
+node --version
+# Expected: v24.x.x (LTS)
+
+pnpm --version
+# Expected: 11.x.x
+
+git --version
+# Expected: git version 2.x.x
+
+docker --version
+# Expected: Docker version 29.x.x
+
+docker compose version
+# Expected: Docker Compose version v5.x.x
+```
+
+### 3. Clone and Configure
+
+```powershell
+# Clone the repository
+git clone <repository-url> multiportal-listing-manager
+cd multiportal-listing-manager
+
+# Copy environment configuration
+copy .env.example .env
+
+# (Optional) Edit .env with custom values
+# notepad .env
+```
+
+### 4. Start Docker Services
+
+```powershell
+# Start PostgreSQL, Redis and MinIO in the background
+docker compose up -d
+
+# Verify all services are healthy
+docker compose ps
+```
+
+To stop services later:
+
+```powershell
+docker compose down
+```
+
+To stop and remove all data volumes:
+
+```powershell
+docker compose down -v
+```
+
+### 5. Install Dependencies
+
+```powershell
+# Install all workspace dependencies
+pnpm install
+```
+
+### 6. Set Up the Database
+
+```powershell
+# Navigate to the API workspace
+cd apps/api
+
+# Generate Prisma client
+npx prisma generate
+
+# Run database migrations
+npx prisma migrate dev
+
+# (Optional) Seed the database with initial data
+# npx prisma db seed
+
+# Return to project root
+cd ..\..
+```
+
+### 7. Start the Applications
+
+Open three separate PowerShell terminals from the project root:
+
+**Terminal 1 — API server:**
+```powershell
+pnpm --filter @multiportal/api dev
+```
+
+**Terminal 2 — Worker:**
+```powershell
+pnpm --filter @multiportal/worker dev
+```
+
+**Terminal 3 — Web frontend:**
+```powershell
+pnpm --filter @multiportal/web dev
+```
+
+Or start all three in parallel (single terminal):
+
+```powershell
+pnpm dev
+```
+
+### 8. Access the Application
+
+- **Web frontend:** http://localhost:3000
+- **API server:** http://localhost:3001
+- **MinIO Console:** http://localhost:9001 (login: `minioadmin` / `minioadmin`)
+
+### 9. Run Tests
+
+```powershell
+# Run all tests across the workspace
+pnpm test
+
+# Run tests for a specific package
+pnpm --filter @multiportal/api test
+pnpm --filter @multiportal/web test
+pnpm --filter @multiportal/worker test
+
+# Run E2E tests
+npx playwright test
+```
+
+### Troubleshooting
+
+**"pnpm is not recognized":** Run `npm install -g pnpm` and restart the terminal.
+
+**Docker containers fail to start:** Ensure Docker Desktop is running and WSL 2 is installed (`wsl --install` as Administrator).
+
+**Port conflicts:** Edit `.env` and change `API_PORT`, `WEB_PORT`, or the Docker Compose port mappings.
+
+**Database connection errors:** Check that `docker compose up -d` completed successfully and `DATABASE_URL` in `.env` matches the Docker Compose credentials.
+
 ## Repository Structure
 
 ```text

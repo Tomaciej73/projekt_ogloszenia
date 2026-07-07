@@ -1,0 +1,266 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// Enums
+// ============================================================
+
+enum ListingDraftStatus {
+  draft
+  ready
+  archived
+}
+
+enum ExternalListingStatus {
+  queued
+  publishing
+  published
+  failed
+  requires_action
+  expired
+  sold
+  deleted
+  unsupported
+}
+
+enum PublicationJobStatus {
+  pending
+  processing
+  success
+  failed
+  retrying
+  cancelled
+}
+
+enum IntegrationStatus {
+  official_api
+  partner_api_required
+  pro_account_required
+  manual_export_only
+  unsupported
+  research_required
+}
+
+// ============================================================
+// Core Entities
+// ============================================================
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  passwordHash String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspaces        WorkspaceMember[]
+  marketplaceAccounts MarketplaceAccount[]
+  listingDrafts     ListingDraft[]
+  auditLogs         AuditLog[]
+}
+
+model Workspace {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members     WorkspaceMember[]
+  listingDrafts ListingDraft[]
+}
+
+model WorkspaceMember {
+  id        String   @id @default(uuid())
+  role      String   @default("member") // owner, admin, member
+  createdAt DateTime @default(now())
+
+  userId      String
+  workspaceId String
+
+  user      User      @relation(fields: [userId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([userId, workspaceId])
+}
+
+model ListingDraft {
+  id          String             @id @default(uuid())
+  title       String
+  description String             @db.Text
+  price       Decimal
+  currency    String             @default("PLN")
+  category    String
+  attributes  Json               @default("{}")
+  location    Json               @default("{}")
+  status      ListingDraftStatus @default(draft)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  userId      String
+  workspaceId String
+
+  user      User      @relation(fields: [userId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  media            ListingMedia[]
+  externalListings ExternalListing[]
+  publicationJobs  PublicationJob[]
+}
+
+model ListingMedia {
+  id        String   @id @default(uuid())
+  url       String
+  key       String   // S3 object key
+  fileName  String
+  fileSize  Int
+  mimeType  String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  listingDraftId String
+
+  listingDraft ListingDraft @relation(fields: [listingDraftId], references: [id])
+}
+
+model MarketplaceProvider {
+  id          String        @id @default(uuid())
+  name        String        @unique
+  slug        String        @unique
+  displayName String
+  logoUrl     String?
+  isEnabled   Boolean       @default(false)
+  capabilities Json         @default("{}") // ProviderCapabilities stored as JSON
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  accounts        MarketplaceAccount[]
+  externalListings ExternalListing[]
+}
+
+model MarketplaceAccount {
+  id            String        @id @default(uuid())
+  providerUserId String?
+  accessToken   String        @db.Text // AES-256-GCM encrypted at rest
+  refreshToken  String?       @db.Text // AES-256-GCM encrypted at rest
+  tokenExpiresAt DateTime?
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  userId             String
+  marketplaceProviderId String
+
+  user               User                @relation(fields: [userId], references: [id])
+  marketplaceProvider MarketplaceProvider @relation(fields: [marketplaceProviderId], references: [id])
+
+  externalListings ExternalListing[]
+  publicationJobs  PublicationJob[]
+
+  @@unique([userId, marketplaceProviderId])
+}
+
+model ExternalListing {
+  id            String               @id @default(uuid())
+  externalId    String?              // provider's listing ID
+  externalUrl   String?
+  status        ExternalListingStatus @default(queued)
+  metadata      Json                 @default("{}")
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  listingDraftId        String
+  marketplaceProviderId String
+  marketplaceAccountId  String
+
+  listingDraft        ListingDraft         @relation(fields: [listingDraftId], references: [id])
+  marketplaceProvider MarketplaceProvider  @relation(fields: [marketplaceProviderId], references: [id])
+  marketplaceAccount  MarketplaceAccount   @relation(fields: [marketplaceAccountId], references: [id])
+
+  publicationEvents PublicationEvent[]
+  publicationJobs   PublicationJob[]
+
+  @@unique([listingDraftId, marketplaceProviderId])
+}
+
+model PublicationJob {
+  id             String              @id @default(uuid())
+  idempotencyKey String              @unique
+  status         PublicationJobStatus @default(pending)
+  errorMessage   String?             @db.Text
+  attempts       Int                 @default(0)
+  maxAttempts    Int                 @default(3)
+  lastAttemptAt  DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  listingDraftId       String
+  marketplaceAccountId  String
+  externalListingId    String
+
+  listingDraft       ListingDraft       @relation(fields: [listingDraftId], references: [id])
+  marketplaceAccount MarketplaceAccount @relation(fields: [marketplaceAccountId], references: [id])
+  externalListing    ExternalListing    @relation(fields: [externalListingId], references: [id])
+
+  events PublicationEvent[]
+}
+
+model PublicationEvent {
+  id        String   @id @default(uuid())
+  eventType String   // created, published, updated, failed, retried, cancelled
+  message   String?  @db.Text
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  publicationJobId    String
+  externalListingId   String
+
+  publicationJob  PublicationJob  @relation(fields: [publicationJobId], references: [id])
+  externalListing ExternalListing @relation(fields: [externalListingId], references: [id])
+}
+
+model CategoryMapping {
+  id             String @id @default(uuid())
+  internalCategory String
+  providerCategory  String
+  createdAt      DateTime @default(now())
+
+  marketplaceProviderId String
+
+  marketplaceProvider MarketplaceProvider @relation(fields: [marketplaceProviderId], references: [id])
+
+  @@unique([marketplaceProviderId, internalCategory])
+}
+
+model AttributeMapping {
+  id               String @id @default(uuid())
+  internalAttribute String
+  providerAttribute  String
+  createdAt        DateTime @default(now())
+
+  marketplaceProviderId String
+
+  marketplaceProvider MarketplaceProvider @relation(fields: [marketplaceProviderId], references: [id])
+
+  @@unique([marketplaceProviderId, internalAttribute])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String   // account_linked, published, updated, unpublished, deleted, synced
+  entityType String  // ListingDraft, ExternalListing, MarketplaceAccount
+  entityId  String
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  userId String
+
+  user User @relation(fields: [userId], references: [id])
+}

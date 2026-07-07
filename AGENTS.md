@@ -69,6 +69,39 @@ memory-bank/    — Project documentation (always keep current)
 
 See `README.md` for the full listing of `ListingDraftStatus`, `ExternalListingStatus`, and `PublicationJobStatus` values.
 
+## Local Development Setup
+
+Before working on this project, verify the following are installed (run in PowerShell):
+
+```powershell
+node --version    # Expected: v24.x.x LTS
+pnpm --version    # Expected: 11.x.x
+git --version     # Expected: git version 2.x.x
+docker --version  # Expected: Docker version 29.x.x
+docker compose version  # Expected: Docker Compose version v5.x.x
+```
+
+If pnpm is missing, install it:
+
+```powershell
+npm install -g pnpm
+```
+
+Quick start after cloning:
+
+```powershell
+copy .env.example .env
+docker compose up -d
+pnpm install
+cd apps/api && npx prisma generate && npx prisma migrate dev && cd ..\..
+pnpm dev
+```
+
+Access:
+- http://localhost:3000 — Web frontend
+- http://localhost:3001 — API server
+- http://localhost:9001 — MinIO Console (minioadmin / minioadmin)
+
 ## Security
 
 - Do not store provider tokens in plain text (AES-256-GCM encryption at rest).

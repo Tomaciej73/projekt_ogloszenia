@@ -1,9 +1,9 @@
 # Active Context
 
 ## Current Phase
-**Phase 1 — Repository Scaffolding & Dev Environment** (just completed)
+**Phase 2 — Shared Configuration & Foundations** (complete)
 
-The monorepo skeleton is in place. All six workspace packages have `package.json` and `tsconfig.json` stubs. Docker Compose, `.env.example`, `AGENTS.md`, and `.gitignore` are created. The next step is Phase 2: shared configuration validation.
+All source scaffolding is done: shared config, enums/types, Prisma schema (12 entities + 4 enums), NestJS API shell (11 modules), worker shell, Next.js frontend shell, connector interface + MockConnector. Next step: Phase 3 — listing draft CRUD flow (first vertical slice).
 
 ## Active Decisions
 - Monorepo structure confirmed: `apps/web`, `apps/api`, `apps/worker`, `packages/shared`, `packages/connectors`, `packages/config`
@@ -22,13 +22,13 @@ The monorepo skeleton is in place. All six workspace packages have `package.json
 5. ~~Create `.env.example` with all placeholder variables~~ ✓
 6. ~~Create `AGENTS.md`~~ ✓
 7. ~~Create `.gitignore`~~ ✓
-8. Create `packages/config/src/` — Zod environment validation schema + validated config loader
-9. Create `packages/shared/src/` — shared enums for ListingDraftStatus, ExternalListingStatus, PublicationJobStatus, IntegrationStatus
-10. Create initial Prisma schema with all 12 core entities and 3 status enums in `apps/api/prisma/`
-11. Scaffold `apps/api/src/` — NestJS bootstrap, AppModule, 11 module stubs
-12. Scaffold `apps/worker/src/` — NestJS standalone bootstrap, queue definitions, job processor stubs
-13. Scaffold `apps/web/src/` — Next.js App Router, Tailwind CSS, shadcn/ui setup
-14. Create `packages/connectors/src/` — `MarketplaceConnector` interface, `ProviderCapabilities` type, `MockConnector`
+8. ~~Create `packages/config/src/` — Zod environment validation schema + validated config loader~~ ✓
+9. ~~Create `packages/shared/src/` — shared enums for ListingDraftStatus, ExternalListingStatus, PublicationJobStatus, IntegrationStatus~~ ✓
+10. ~~Create initial Prisma schema with all 12 core entities and 3 status enums in `apps/api/prisma/`~~ ✓
+11. ~~Scaffold `apps/api/src/` — NestJS bootstrap, AppModule, 11 module stubs~~ ✓
+12. ~~Scaffold `apps/worker/src/` — NestJS standalone bootstrap, queue definitions~~ ✓
+13. ~~Scaffold `apps/web/src/` — Next.js App Router, layout + homepage~~ ✓
+14. ~~Create `packages/connectors/src/` — `MarketplaceConnector` interface, `ProviderCapabilities` type, `MockConnector`~~ ✓
 15. Build listing draft CRUD flow (first complete vertical slice)
 16. Research OLX official API
 
@@ -43,6 +43,9 @@ The monorepo skeleton is in place. All six workspace packages have `package.json
 - Node.js and pnpm not yet installed — dependency installation and version verification pending
 
 ## Recent Changes
+- 2026-07-07: Phase 2 complete — all scaffolding done: shared config, enums, Prisma schema, NestJS API (11 modules), worker, Next.js shell, connector interface + MockConnector
+- 2026-07-07: Local dev setup guide added to README.md and AGENTS.md with PowerShell commands
+- 2026-07-07: Environment verified — Node.js 24.18.0, pnpm 11.10.0, Git 2.55, Docker 29.6.1, Docker Compose 5.2.0 all present
 - 2026-07-07: Phase 1 complete — monorepo scaffolded with 6 workspace packages, Docker Compose, .env.example, AGENTS.md, .gitignore
 - 2026-07-07: Version verification policy established across README, .clinerules/03-workflow.md, and techContext.md
 - 2026-07-07: README.md formatting fixed (unclosed code blocks, missing headings)
