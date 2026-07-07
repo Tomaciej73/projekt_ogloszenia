@@ -1,32 +1,37 @@
 # MultiPortal Listing Manager — Local Development Services
-# Docker image tags must be verified against latest stable versions before use.
+# All configurable values come from .env (git-ignored).
+# Copy .env.example to .env and adjust as needed.
 # See memory-bank/techContext.md for the version verification policy.
+
+name: multiportal
 
 services:
   postgres:
-    image: postgres:18.4-alpine3.23
+    container_name: multiportal-postgres
+    image: ${POSTGRES_IMAGE:-postgres:18.4-alpine3.23}
     restart: unless-stopped
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-multiportal}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-multiportal}
-      POSTGRES_DB: ${POSTGRES_DB:-multiportal}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-multiportal}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
-    image: redis:8.8.0-alpine3.23
+    container_name: multiportal-redis
+    image: ${REDIS_IMAGE:-redis:8.8.0-alpine3.23}
     restart: unless-stopped
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
-      - redisdata:/data
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -34,16 +39,17 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:RELEASE.2025-07-23T15-54-02Z
+    container_name: multiportal-minio
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-07-23T15-54-02Z}
     restart: unless-stopped
     ports:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
-      - miniodata:/data
+      - minio_data:/data
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
@@ -52,6 +58,9 @@ services:
       retries: 5
 
 volumes:
-  pgdata:
-  redisdata:
-  miniodata:
+  postgres_data:
+    name: multiportal_postgres_data
+  redis_data:
+    name: multiportal_redis_data
+  minio_data:
+    name: multiportal_minio_data

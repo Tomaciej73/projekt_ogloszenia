@@ -6,10 +6,12 @@ import {
   Delete,
   Body,
   Param,
+  NotFoundException,
+  BadRequestException,
 } from "@nestjs/common";
 import { ListingsService } from "./listings.service";
-import type { CreateListingDto } from "./dto/create-listing.dto";
-import type { UpdateListingDto } from "./dto/update-listing.dto";
+import { CreateListingDto } from "./dto/create-listing.dto";
+import { UpdateListingDto } from "./dto/update-listing.dto";
 
 @Controller("listings")
 export class ListingsController {
@@ -33,7 +35,7 @@ export class ListingsController {
     const userId = "user-1";
     const listing = this.listingsService.findOne(id, userId);
     if (!listing) {
-      return { error: "Listing not found" };
+      throw new NotFoundException(`Listing with id "${id}" not found`);
     }
     return listing;
   }
@@ -43,7 +45,7 @@ export class ListingsController {
     const userId = "user-1";
     const listing = this.listingsService.update(id, userId, dto);
     if (!listing) {
-      return { error: "Listing not found" };
+      throw new NotFoundException(`Listing with id "${id}" not found`);
     }
     return listing;
   }
@@ -53,7 +55,7 @@ export class ListingsController {
     const userId = "user-1";
     const deleted = this.listingsService.remove(id, userId);
     if (!deleted) {
-      return { error: "Listing not found" };
+      throw new NotFoundException(`Listing with id "${id}" not found`);
     }
     return { deleted: true };
   }

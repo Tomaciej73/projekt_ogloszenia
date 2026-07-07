@@ -1,18 +1,4 @@
-import type { ListingDraftStatus } from "@multiportal/shared";
+import { PartialType } from "@nestjs/mapped-types";
+import { CreateListingDto } from "./create-listing.dto";
 
-export class UpdateListingDto {
-  title?: string;
-  description?: string;
-  price?: number;
-  currency?: string;
-  category?: string;
-  attributes?: Record<string, unknown>;
-  location?: {
-    city: string;
-    region?: string;
-    country: string;
-  };
-  photoUrls?: string[];
-  deliveryOptions?: string[];
-  status?: ListingDraftStatus;
-}
+export class UpdateListingDto extends PartialType(CreateListingDto) {}

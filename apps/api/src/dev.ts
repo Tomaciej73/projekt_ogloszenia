@@ -1,16 +1,13 @@
+// Development bootstrap — registers ts-node and starts the NestJS application.
+// Usage: node --require ts-node/register src/dev.ts
+
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { AppModule } from "./app.module";
-import { loadConfig } from "@multiportal/config";
 
 async function bootstrap(): Promise<void> {
-  const config = loadConfig();
-
   const app = await NestFactory.create(AppModule, {
-    logger:
-      config.LOG_LEVEL === "debug"
-        ? ["log", "error", "warn", "debug", "verbose"]
-        : ["log", "error", "warn"],
+    logger: ["log", "error", "warn", "debug", "verbose"],
   });
 
   app.useGlobalPipes(
@@ -22,12 +19,12 @@ async function bootstrap(): Promise<void> {
   );
 
   app.enableCors({
-    origin: config.NODE_ENV === "production" ? [] : "*",
+    origin: "*",
     credentials: true,
   });
 
-  await app.listen(config.API_PORT);
-  console.log(`API server listening on port ${config.API_PORT}`);
+  await app.listen(3001);
+  console.log("API server listening on http://localhost:3001");
 }
 
 bootstrap().catch((error) => {

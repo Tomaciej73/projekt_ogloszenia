@@ -1,106 +1,77 @@
 import { Injectable } from "@nestjs/common";
-import { ListingDraftStatus } from "@multiportal/shared";
+import { PrismaService } from "../../prisma/prisma.service";
 import type { CreateListingDto } from "./dto/create-listing.dto";
 import type { UpdateListingDto } from "./dto/update-listing.dto";
 
-export interface ListingRecord {
-  id: string;
-  title: string;
-  description: string;
-  price: number;
-  currency: string;
-  category: string;
-  attributes: Record<string, unknown>;
-  location: Record<string, unknown>;
-  photoUrls: string[];
-  deliveryOptions: string[];
-  status: ListingDraftStatus;
-  userId: string;
-  workspaceId: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-/**
- * In-memory listing draft service for development.
- * Will be replaced with Prisma-backed persistence in the next iteration.
- */
 @Injectable()
 export class ListingsService {
-  private listings: Map<string, ListingRecord> = new Map();
-  private idCounter = 0;
+  constructor(private readonly prisma: PrismaService) {}
 
-  private generateId(): string {
-    this.idCounter += 1;
-    return `draft-${this.idCounter}-${Date.now()}`;
+  create(userId: string, dto: CreateListingDto) {
+    return this.prisma.listingDraft.create({
+      data: {
+        title: dto.title,
+        description: dto.description,
+        price: dto.price,
+        currency: dto.currency ?? "PLN",
+        category: dto.category,
+        attributes: dto.attributes ?? {},
+        location: dto.location ?? {},
+        photoUrls: dto.photoUrls ?? [],
+        deliveryOptions: dto.deliveryOptions ?? [],
+        status: dto.status ?? "draft",
+        userId,
+        workspaceId: dto.workspaceId,
+      },
+    });
   }
 
-  create(userId: string, dto: CreateListingDto): ListingRecord {
-    const id = this.generateId();
-    const now = new Date();
-
-    const record: ListingRecord = {
-      id,
-      title: dto.title,
-      description: dto.description,
-      price: dto.price,
-      currency: dto.currency ?? "PLN",
-      category: dto.category,
-      attributes: dto.attributes ?? {},
-      location: (dto.location as Record<string, unknown>) ?? {},
-      photoUrls: dto.photoUrls ?? [],
-      deliveryOptions: dto.deliveryOptions ?? [],
-      status: dto.status ?? ListingDraftStatus.DRAFT,
-      userId,
-      workspaceId: dto.workspaceId,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    this.listings.set(id, record);
-    return record;
+  findAll(userId: string) {
+    return this.prisma.listingDraft.findMany({
+      where: { userId },
+      include: { media: true },
+      orderBy: { createdAt: "desc" },
+    });
   }
 
-  findAll(userId: string): ListingRecord[] {
-    return Array.from(this.listings.values()).filter((l) => l.userId === userId);
+  findOne(id: string, userId: string) {
+    return this.prisma.listingDraft.findFirst({
+      where: { id, userId },
+      include: { media: true, externalListings: true },
+    });
   }
 
-  findOne(id: string, userId: string): ListingRecord | undefined {
-    const listing = this.listings.get(id);
-    if (!listing || listing.userId !== userId) {
-      return undefined;
-    }
-    return listing;
-  }
-
-  update(id: string, userId: string, dto: UpdateListingDto): ListingRecord | undefined {
-    const listing = this.findOne(id, userId);
-    if (!listing) {
-      return undefined;
+  async update(id: string, userId: string, dto: UpdateListingDto) {
+    const existing = await this.findOne(id, userId);
+    if (!existing) {
+      return null;
     }
 
-    if (dto.title !== undefined) listing.title = dto.title;
-    if (dto.description !== undefined) listing.description = dto.description;
-    if (dto.price !== undefined) listing.price = dto.price;
-    if (dto.currency !== undefined) listing.currency = dto.currency;
-    if (dto.category !== undefined) listing.category = dto.category;
-    if (dto.attributes !== undefined) listing.attributes = dto.attributes;
-    if (dto.location !== undefined) listing.location = dto.location;
-    if (dto.photoUrls !== undefined) listing.photoUrls = dto.photoUrls;
-    if (dto.deliveryOptions !== undefined) listing.deliveryOptions = dto.deliveryOptions;
-    if (dto.status !== undefined) listing.status = dto.status;
-
-    listing.updatedAt = new Date();
-    this.listings.set(id, listing);
-    return listing;
+    return this.prisma.listingDraft.update({
+      where: { id },
+      data: {
+        ...(dto.title !== undefined && { title: dto.title }),
+        ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.price !== undefined && { price: dto.price }),
+        ...(dto.currency !== undefined && { currency: dto.currency }),
+        ...(dto.category !== undefined && { category: dto.category }),
+        ...(dto.attributes !== undefined && { attributes: dto.attributes }),
+        ...(dto.location !== undefined && { location: dto.location }),
+        ...(dto.photoUrls !== undefined && { photoUrls: dto.photoUrls }),
+        ...(dto.deliveryOptions !== undefined && { deliveryOptions: dto.deliveryOptions }),
+        ...(dto.status !== undefined && { status: dto.status }),
+      },
+      include: { media: true },
+    });
   }
 
-  remove(id: string, userId: string): boolean {
-    const listing = this.findOne(id, userId);
-    if (!listing) {
-      return false;
+  async remove(id: string, userId: string) {
+    const existing = await this.findOne(id, userId);
+    if (!existing) {
+      return null;
     }
-    this.listings.delete(id);
-    return true;
+
+    await this.prisma.listingDraft.delete({ where: { id } });
+    return existing;
   }
 }
