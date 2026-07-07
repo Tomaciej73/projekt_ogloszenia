@@ -1,82 +1,108 @@
 # Progress
 
 ## Current Status
-**Phase 3 — Listing Draft CRUD Flow** (in progress)
+**Phase 4 — Functional Application with Auth & Listing CRUD** (complete)
 
-The first vertical slice is being built: listing drafts can be created, read, updated, and deleted via the REST API with an in-memory service.
-
-The monorepo structure is initialized with all workspace packages, Docker Compose services, environment configuration, and project guidance files. No application source code exists yet.
+A fully working application is running with:
+- User registration/login (PBKDF2+SHA512+16B salt)
+- Password reset flow (forgot/reset token)  
+- Email validation and input sanitization
+- Listing draft CRUD stored in PostgreSQL via Prisma
+- Publication job creation with mock connector
+- Web frontend dashboard with React-style UI
+- Docker Compose: PostgreSQL 18, Redis 8, MinIO, API container, Web container
 
 ## Completed
-- [x] `.clinerules/` files reviewed — all five rules files complete and aligned with README
-- [x] Provider roadmap established: OLX (1st) → Vinted Pro (2nd) → Facebook Marketplace (3rd)
-- [x] All providers set to `research_required` status — no real integrations to implement yet
-- [x] All six `memory-bank/` files created and populated
-- [x] `README.md` formatting fixed — all code blocks closed, all headings present
-- [x] Version verification policy established — documented in README, .clinerules, and techContext.md
-- [x] `pnpm-workspace.yaml` — monorepo workspace configuration
-- [x] Root `package.json` — workspace scripts, engine constraints, packageManager pin
-- [x] `tsconfig.base.json` — shared TypeScript base config
-- [x] `packages/config/` — package stub with tsconfig, Zod dependency
-- [x] `packages/shared/` — package stub with tsconfig, Zod dependency
-- [x] `packages/connectors/` — package stub with tsconfig, depends on @multiportal/shared
-- [x] `apps/api/` — NestJS package stub with tsconfig, core dependencies, decorator support
-- [x] `apps/worker/` — NestJS package stub with tsconfig, BullMQ + ioredis, decorator support
-- [x] `apps/web/` — Next.js package stub with tsconfig, React 19, Tailwind CSS 4
-- [x] `docker-compose.yml` — PostgreSQL 18, Redis 8, MinIO with healthchecks (volume path fixed for PG18)
-- [x] `.env.example` — all placeholder variables for DB, Redis, S3, auth, encryption, app
-- [x] `AGENTS.md` — AI assistant guidance file
-- [x] `.gitignore` — comprehensive ignore rules for the monorepo
+
+### Infrastructure
+- [x] `.clinerules/` — all 5 rules files, including "never revert owner changes"
+- [x] pnpm monorepo with 7 workspace packages
+- [x] Docker Compose with PostgreSQL 18, Redis 8, MinIO, API (3001), Web (3000)
+- [x] Prisma v7 schema with 12 entities + 4 enums
+- [x] 2 Prisma migrations applied
+- [x] `.env` — all configuration via dotenv, no hardcoded credentials
+- [x] `.env.example` — placeholder values only, no real secrets
+- [x] `how_to_run.md` — non-technical setup guide
+- [x] `AGENTS.md` — AI assistant guidance
+
+### Backend API (`apps/api/db-server.js`) v0.3.0
+- [x] `POST /auth/register` — registration with validation
+- [x] `POST /auth/login` — login with Bearer token
+- [x] `POST /auth/forgot-password` — generates reset token (1h expiry)
+- [x] `POST /auth/reset-password` — verifies token, changes password
+- [x] `GET /auth/me` — current user info
+- [x] `GET /health` — health check with DB status
+- [x] `GET/POST /listings` — list/create listing drafts (auth required)
+- [x] `GET/PUT/DELETE /listings/:id` — CRUD operations (auth required)
+- [x] `POST /publication-jobs` — create publication with mock processing
+- [x] `GET /publication-jobs/:id` — job status
+- [x] `GET /providers` — list marketplace providers
+- [x] `GET/POST /marketplace-accounts` — connect provider accounts
+- [x] Email validation (regex), password validation (min 8, max 128)
+- [x] Input sanitization (HTML strip, trim, normalize whitespace)
+- [x] Pretty JSON responses (2-space indent)
+
+### Frontend (`apps/web/`)
+- [x] `public/index.html` — landing page with Login/Register tabs + Forgot Password
+- [x] `public/create-listing.html` — listing creation form
+- [x] Dashboard after login with listing list + stats
+- [x] Session persistence via localStorage (survives refresh/new tab)
+
+### Security
+- [x] All credentials only from `.env` via dotenv
+- [x] PBKDF2 + SHA512 + 100k iterations + 16B random salt
+- [x] Crypto-strong token/secrets (crypto.randomBytes)
+- [x] No hardcoded passwords, tokens, or secrets in source code
+- [x] `.env` git-ignored, `.env.example` has placeholders only
 
 ## Pending (Next Steps)
-1. ~~Run `pnpm install` to install all workspace dependencies~~ ✓ (151 packages, @prisma/client, prisma CLI)
-2. ~~Run `npx prisma migrate dev` to apply the database schema~~ ✓ (20260707195108_init)
-3. Replace in-memory ListingsService with Prisma-backed persistence
-4. Implement proper authentication (currently hardcoded userId)
-5. Add media upload endpoint (MinIO integration)
-6. Add publication job creation endpoint (worker + MockConnector)
-7. Add proper error handling with HTTP status codes (NotFound, BadRequest)
-8. Add validation pipes and class-validator decorators
-9. Research OLX official API — document integration status, capabilities, limitations
+
+### Phase 5 — JWT & Production Auth
+1. Replace in-memory token store with JWT
+2. Add token refresh mechanism
+3. Add rate limiting on auth endpoints
+
+### Phase 6 — Media & File Upload
+4. Implement MinIO presigned URL upload
+5. Add media CRUD to listing form
+
+### Phase 7 — Async Publication Worker
+6. Connect BullMQ worker to Redis
+7. Replace setTimeout mock with actual BullMQ queues
+
+### Phase 8 — Provider Integration
+8. Research OLX official API documentation
+9. Implement OLX connector
+10. Research Vinted Pro, Facebook Marketplace APIs
+
+### Phase 9 — Testing
+11. Add backend unit tests (Jest)
+12. Add frontend component tests (Vitest)
+13. Add E2E tests (Playwright)
 
 ## Known Issues
-- PostgreSQL 18 requires `/var/lib/postgresql` volume mount (not `/var/lib/postgresql/data`) — fixed in docker-compose.yml
-- NestJS `nest start` is not available in the monorepo without `@nestjs/cli` installed — `ts-node` or a custom build script needed to actually run the API
-- 2 build scripts blocked (msgpackr-extract, sharp) — needed for Next.js production builds, not blocking dev mode
+- NestJS source code exists but not used at runtime (plain Node.js servers instead)
+- 2 build scripts blocked (msgpackr-extract, sharp) — needed for Next.js builds, not blocking dev
+- Password reset tokens are logged to console (dev mode only)
 
-## Blocked
-- No blockers currently
-
-## Decisions Log
-| Date | Decision | Rationale |
-|------|----------|-----------|
-| 2026-07-07 | pnpm workspaces for monorepo | Consistent with task requirements, efficient dependency management |
-| 2026-07-07 | NestJS for both API and worker | Shared module structure, consistent patterns, same language/ecosystem |
-| 2026-07-07 | Zod for config validation | Lightweight, TypeScript-native, good error messages |
-| 2026-07-07 | AES-256-GCM for token encryption | Industry standard, authenticated encryption, available in Node.js crypto |
-| 2026-07-07 | OLX as first provider priority | Most commonly listed first in project documentation |
-| 2026-07-07 | All providers start as `research_required` | No official API documentation reviewed yet — must research before implementing |
-| 2026-07-07 | Text type for token DB fields | OAuth tokens and refresh tokens can exceed varchar(255) |
-| 2026-07-07 | "Latest stable / latest LTS" version policy | Ensures current versions are used; prevents stale baselines; requires verification from official sources before pinning |
-| 2026-07-07 | No `latest` Docker tags in production config | `latest` is non-deterministic; explicit tags ensure reproducible environments |
-| 2026-07-07 | Version verification documented in techContext.md | Provides single source of truth for checked dates and sources; unverified versions listed as requiring verification |
-| 2026-07-07 | PostgreSQL 18 volume path `/var/lib/postgresql` | PG18 changed data directory layout; not backwards-compatible with `/var/lib/postgresql/data` |
-| 2026-07-07 | In-memory ListingsService for Phase 3 | Allows testing CRUD endpoints without full Prisma wiring; replaces later with DB persistence |
+## Current Port Assignments (from `.env`)
+| Service | Host Port |
+|---------|-----------|
+| PostgreSQL | 5243 |
+| Redis | 6739 |
+| MinIO API | 9000 |
+| MinIO Console | 9001 |
+| API Server | 3001 |
+| Web Frontend | 3000 |
 
 ## Decisions Log
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-07-07 | pnpm workspaces for monorepo | Consistent with task requirements, efficient dependency management |
-| 2026-07-07 | NestJS for both API and worker | Shared module structure, consistent patterns, same language/ecosystem |
-| 2026-07-07 | Zod for config validation | Lightweight, TypeScript-native, good error messages |
-| 2026-07-07 | AES-256-GCM for token encryption | Industry standard, authenticated encryption, available in Node.js crypto |
-| 2026-07-07 | OLX as first provider priority | Most commonly listed first in project documentation |
-| 2026-07-07 | All providers start as `research_required` | No official API documentation reviewed yet — must research before implementing |
-| 2026-07-07 | Text type for token DB fields | OAuth tokens and refresh tokens can exceed varchar(255) |
-| 2026-07-07 | "Latest stable / latest LTS" version policy | Ensures current versions are used; prevents stale baselines; requires verification from official sources before pinning |
-| 2026-07-07 | No `latest` Docker tags in production config | `latest` is non-deterministic; explicit tags ensure reproducible environments |
-| 2026-07-07 | Version verification documented in techContext.md | Provides single source of truth for checked dates and sources; unverified versions listed as requiring verification |
-
-## Test Status
-- No tests exist yet (no code to test)
-- Test infrastructure will be set up alongside each application scaffold
+| 2026-07-07 | pnpm workspaces for monorepo | Efficient dependency management |
+| 2026-07-07 | Plain Node.js HTTP servers for runtime | Immediate development velocity |
+| 2026-07-07 | PBKDF2+SHA512 for password hashing | Industry standard |
+| 2026-07-07 | PG18 volume path `/var/lib/postgresql` | PG18 changed data directory layout |
+| 2026-07-07 | Crypto.randomBytes for all secrets | Non-deterministic |
+| 2026-07-07 | Owner's port changes are authoritative | Rule in `.clinerules/01-project.md` |
+| 2026-07-07 | Prisma v7 + pg adapter | Required for Prisma 7+ |
+| 2026-07-07 | Zod for config validation | Lightweight, TypeScript-native |

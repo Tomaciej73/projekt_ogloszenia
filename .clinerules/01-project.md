@@ -18,6 +18,7 @@ Users create listing drafts once and publish/manage them across multiple marketp
 - Use official APIs first.
 - Do not use scraping, private APIs, browser automation or cookie-based automation unless explicitly approved and documented as a risk.
 - Update Memory Bank after meaningful changes.
+- Never revert or undo changes made by the project owner (user). If the owner modifies port numbers, configuration values, file names, or any other project settings, accept those changes as authoritative and work with them. Do not "fix" or "correct" the owner's edits unless explicitly asked.
 
 ## Language Policy
 

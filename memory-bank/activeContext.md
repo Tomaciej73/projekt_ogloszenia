@@ -1,54 +1,56 @@
 # Active Context
 
 ## Current Phase
-**Phase 2 — Shared Configuration & Foundations** (complete)
+**Phase 4 — Functional Application with Auth & Listing CRUD** (in progress)
 
-All source scaffolding is done: shared config, enums/types, Prisma schema (12 entities + 4 enums), NestJS API shell (11 modules), worker shell, Next.js frontend shell, connector interface + MockConnector. Next step: Phase 3 — listing draft CRUD flow (first vertical slice).
+A fully working application is running: user registration/login with PBKDF2+SHA512 password hashing, password reset flow, listing draft CRUD stored in PostgreSQL via Prisma, publication job creation with mock connector, and a web frontend dashboard. Docker Compose includes PostgreSQL 18, Redis 8, MinIO, and optional API+Web containers (`profile: full`).
 
 ## Active Decisions
-- Monorepo structure confirmed: `apps/web`, `apps/api`, `apps/worker`, `packages/shared`, `packages/connectors`, `packages/config`
-- Tech stack confirmed: pnpm workspaces, Next.js (frontend), NestJS (backend + worker), PostgreSQL, Prisma, Redis + BullMQ, MinIO/S3, Jest/Vitest/Playwright
-- Provider roadmap confirmed: OLX (1st), Vinted Pro (2nd), Facebook Marketplace (3rd)
-- All providers currently `research_required` — no real integrations to be implemented yet
-- Version policy: latest LTS for runtimes, latest stable for frameworks, no `latest` Docker tags, verify from official sources
-- pnpm 11.10.0 pinned as packageManager in root `package.json`
-- Workspace protocol (`workspace:*`) used for inter-package dependencies
 
-## Immediate Next Steps (In Order)
-1. ~~Read README.md, .clinerules/, memory-bank/~~ ✓
-2. ~~Populate all 6 memory-bank files~~ ✓
-3. ~~Initialize pnpm monorepo with workspace configuration~~ ✓
-4. ~~Create `docker-compose.yml` with PostgreSQL, Redis, MinIO~~ ✓
-5. ~~Create `.env.example` with all placeholder variables~~ ✓
-6. ~~Create `AGENTS.md`~~ ✓
-7. ~~Create `.gitignore`~~ ✓
-8. ~~Create `packages/config/src/` — Zod environment validation schema + validated config loader~~ ✓
-9. ~~Create `packages/shared/src/` — shared enums for ListingDraftStatus, ExternalListingStatus, PublicationJobStatus, IntegrationStatus~~ ✓
-10. ~~Create initial Prisma schema with all 12 core entities and 3 status enums in `apps/api/prisma/`~~ ✓
-11. ~~Scaffold `apps/api/src/` — NestJS bootstrap, AppModule, 11 module stubs~~ ✓
-12. ~~Scaffold `apps/worker/src/` — NestJS standalone bootstrap, queue definitions~~ ✓
-13. ~~Scaffold `apps/web/src/` — Next.js App Router, layout + homepage~~ ✓
-14. ~~Create `packages/connectors/src/` — `MarketplaceConnector` interface, `ProviderCapabilities` type, `MockConnector`~~ ✓
-15. Build listing draft CRUD flow (first complete vertical slice)
-16. Research OLX official API
+- **Monorepo structure confirmed:** `apps/web`, `apps/api`, `apps/worker`, `packages/shared`, `packages/connectors`, `packages/config`
+- **Tech stack confirmed:** pnpm workspaces, Node.js 24 LTS, PostgreSQL 18, Prisma v7 (with pg adapter), Redis 8, BullMQ, MinIO/S3
+- **Runtime servers:** Plain Node.js HTTP servers (`apps/api/db-server.js`, `apps/web/front-server.js`) instead of NestJS/Next.js builds — chosen for immediate development velocity. NestJS source code exists as reference for future migration.
+- **Provider roadmap:** OLX (1st) → Vinted Pro (2nd) → Facebook Marketplace (3rd). All `research_required`.
+- **Version policy:** Latest LTS for runtimes, latest stable for frameworks, no `latest` Docker tags, verify from official sources.
+- **pinned packageManager:** pnpm@11.10.0
+- **Workspace protocol:** `workspace:*` for inter-package dependencies
+- **Security:** All credentials from `.env` via dotenv. No hardcoded secrets in source code. PBKDF2+SHA512+16B salt for passwords. Bearer token auth with in-memory session store.
+- **Owner's changes are authoritative:** Port numbers, configuration values, file names chosen by the project owner must not be reverted or "corrected" by AI. See `.clinerules/01-project.md`.
+- **Current port assignments (from `.env`):** PostgreSQL 5243, Redis 6739, MinIO API 9000, MinIO Console 9001, API 3001, Web 3000.
+
+## Immediate Next Steps
+
+1. ~~Initialize monorepo~~ ✓
+2. ~~Docker Compose with PostgreSQL, Redis, MinIO~~ ✓
+3. ~~Prisma schema + migrations~~ ✓
+4. ~~User registration and login~~ ✓
+5. ~~Password reset flow~~ ✓
+6. ~~Input validation and sanitization~~ ✓
+7. ~~Listing draft CRUD (Prisma-backed)~~ ✓
+8. ~~Publication job creation with mock connector~~ ✓
+9. ~~Frontend dashboard with auth~~ ✓
+10. ~~Docker containers for API and Web~~ ✓
+11. Add proper JWT auth (replace in-memory token store)
+12. Add media upload with MinIO presigned URLs
+13. Add BullMQ worker for async publication jobs
+14. Implement provider connector interface with real OLX research
+15. Add E2E tests for main user flow
+16. Add email sending for password reset (currently logged to console)
 
 ## Known Unknowns
-- OLX official API availability, documentation, and limitations
-- Vinted Pro API availability and requirements
-- Facebook Marketplace API availability and requirements
-- Authentication strategy details (exact cookie/token mechanism TBD)
-- Token encryption mechanism (application-level encryption library TBD)
-- CSRF protection implementation details for the chosen auth strategy
-- Exact Prisma schema details (will be designed in Phase 3)
-- Node.js and pnpm not yet installed — dependency installation and version verification pending
+
+- OLX official API availability and documentation
+- Vinted Pro API requirements
+- Facebook Marketplace API access
+- Production deployment strategy (container orchestration, cloud provider)
 
 ## Recent Changes
-- 2026-07-07: Phase 2 complete — all scaffolding done: shared config, enums, Prisma schema, NestJS API (11 modules), worker, Next.js shell, connector interface + MockConnector
-- 2026-07-07: Local dev setup guide added to README.md and AGENTS.md with PowerShell commands
-- 2026-07-07: Environment verified — Node.js 24.18.0, pnpm 11.10.0, Git 2.55, Docker 29.6.1, Docker Compose 5.2.0 all present
-- 2026-07-07: Phase 1 complete — monorepo scaffolded with 6 workspace packages, Docker Compose, .env.example, AGENTS.md, .gitignore
-- 2026-07-07: Version verification policy established across README, .clinerules/03-workflow.md, and techContext.md
-- 2026-07-07: README.md formatting fixed (unclosed code blocks, missing headings)
-- 2026-07-07: `.clinerules/05-language-and-output.md` created
-- 2026-07-07: Memory bank files fully populated
-- 2026-07-07: Provider roadmap established with OLX as first priority
+
+- 2026-07-07: Phase 4 — functional app running: auth, listing CRUD, publication, frontend dashboard
+- 2026-07-07: Docker Compose extended with `api` and `web` service containers (`profile: full`)
+- 2026-07-07: Password reset flow added (`/auth/forgot-password`, `/auth/reset-password`)
+- 2026-07-07: Email validation (regex) and input sanitization (HTML strip, trim) implemented
+- 2026-07-07: `.env` DRY refactor — URL variables reference other `.env` variables
+- 2026-07-07: Rule added to `.clinerules`: never revert owner's changes (e.g. port numbers)
+- 2026-07-07: Phase 3 complete — all scaffolding and CRUD endpoints working
+- 2026-07-07: Phase 1-2 complete — monorepo, Docker, Prisma, shared packages

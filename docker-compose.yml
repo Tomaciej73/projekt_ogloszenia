@@ -6,6 +6,7 @@
 name: multiportal
 
 services:
+  # ── Infrastructure ──
   postgres:
     container_name: multiportal-postgres
     image: ${POSTGRES_IMAGE:-postgres:18.4-alpine3.23}
@@ -56,6 +57,39 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # ── Application Servers (optional — can run locally with `node` instead) ──
+  api:
+    container_name: multiportal-api
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.dev
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3001}:3001"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      NODE_ENV: ${NODE_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    container_name: multiportal-web
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile.dev
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+    depends_on:
+      - api
 
 volumes:
   postgres_data:
