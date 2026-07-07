@@ -1,7 +1,9 @@
 # Progress
 
 ## Current Status
-**Phase 1 — Repository Scaffolding & Dev Environment** (complete)
+**Phase 3 — Listing Draft CRUD Flow** (in progress)
+
+The first vertical slice is being built: listing drafts can be created, read, updated, and deleted via the REST API with an in-memory service.
 
 The monorepo structure is initialized with all workspace packages, Docker Compose services, environment configuration, and project guidance files. No application source code exists yet.
 
@@ -27,14 +29,14 @@ The monorepo structure is initialized with all workspace packages, Docker Compos
 - [x] `.gitignore` — comprehensive ignore rules for the monorepo
 
 ## Pending (Next Steps)
-1. Create `packages/config/src/` — Zod-based environment variable validation with fail-fast
-2. Create `packages/shared/src/` — shared enums (statuses), types, DTOs
-3. Create initial Prisma schema with all 12 core entities and 3 status enums
-4. Scaffold `apps/api/src/` — NestJS application with all 11 module stubs
-5. Scaffold `apps/worker/src/` — NestJS standalone app with BullMQ queue definitions
-6. Scaffold `apps/web/src/` — Next.js application with Tailwind CSS, shadcn/ui setup
-7. Create `packages/connectors/src/` — `MarketplaceConnector` interface, `ProviderCapabilities` type, `MockConnector`
-8. Implement listing draft CRUD flow (first complete vertical slice)
+1. Run `pnpm install` to install all workspace dependencies
+2. Run `npx prisma migrate dev` to apply the database schema
+3. Replace in-memory ListingsService with Prisma-backed persistence
+4. Implement proper authentication (currently hardcoded userId)
+5. Add media upload endpoint (MinIO integration)
+6. Add publication job creation endpoint (worker + MockConnector)
+7. Add proper error handling with HTTP status codes (NotFound, BadRequest)
+8. Add validation pipes and DTO decorators
 9. Research OLX official API — document integration status, capabilities, limitations
 
 ## Known Issues
