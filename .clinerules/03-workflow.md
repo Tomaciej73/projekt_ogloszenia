@@ -27,3 +27,23 @@ Before adding, pinning or documenting dependency versions, runtime versions, Doc
 - Do not guess versions.
 - Do not use `latest` Docker tags blindly for production-oriented configuration.
 - Document important version decisions in `memory-bank/techContext.md`.
+
+# Editor and Session Hygiene
+
+- Keep editor clutter low.
+- Do not open unrelated files.
+- After editing, mention which files were modified.
+- After each task, summarize whether any terminals, dev servers, watchers or long-running processes were started.
+- Do not leave long-running commands active unless explicitly required.
+- Before starting a new implementation phase, check whether previous terminals or dev servers are still running.
+- If a terminal process is no longer needed, ask for approval to stop it.
+- Prefer short-lived commands for validation.
+- Do not start multiple dev servers, watchers or package install processes in parallel.
+
+Before starting this phase:
+1. Do not start multiple long-running commands.
+2. If you need to start a dev server or watcher, clearly say so.
+3. After finishing, report any running terminals/processes that should be stopped.
+4. Keep opened files to the minimum necessary.
+5. Do not open unrelated files.
+6. Update memory-bank after meaningful changes.

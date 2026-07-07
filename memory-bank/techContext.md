@@ -35,39 +35,63 @@ All dependency versions must follow the project version verification policy defi
 6. Document checked dates and source types in this file.
 7. If the exact current version cannot be verified, stop and ask instead of guessing.
 
-### Verified Versions (checked 2026-07-07 via npm registry)
+### Verified Versions (checked 2026-07-07 via official/npm/Docker sources)
 
-| Tool | Version | Source | Notes |
-|------|---------|--------|-------|
-| pnpm | 11.10.0 | npm registry | Latest stable |
-| Next.js | 16.2.10 | npm registry | Latest stable |
-| NestJS (core) | 11.1.27 | npm registry | Latest stable |
-| Prisma | 7.8.0 | npm registry | Latest stable |
+**Runtime:**
 
-### Versions Requiring Verification (not yet checked)
+| Runtime | Version | Policy | Source |
+|--------|---------|--------|--------|
+| Node.js | 24.18.0 | Latest LTS — use as production baseline | nodejs.org |
+| Node.js Current | 26.4.0 | Current release — do not use for production baseline | nodejs.org |
 
-| Tool | Expected Baseline | Verification Needed |
+**Docker images (verified via Docker Hub):**
+
+| Image | Version | Source | Notes |
+|-------|---------|--------|-------|
+| PostgreSQL | 18.4-alpine3.23 | Docker Hub | Latest stable major |
+| Redis | 8.8.0-alpine3.23 | Docker Hub | Latest stable major |
+| MinIO (container) | RELEASE.2025-07-23T15-54-02Z | Docker Hub | Pinned tag for local development |
+| MinIO (source release) | RELEASE.2025-10-15T17-29-55Z | GitHub releases | Docker Hub container tags lag behind GitHub releases; verify latest stable Docker tag before production use |
+
+> **MinIO version discrepancy:** MinIO GitHub releases and Docker Hub container tags are maintained separately and do not always align. Use the Docker Hub pinned tag for local development. Before production deployment, check both [MinIO GitHub releases](https://github.com/minio/minio/releases) and [Docker Hub tags](https://hub.docker.com/r/minio/minio/tags) to pick the latest stable container image. Never use `minio/minio:latest`.
+
+**npm packages (verified via npm registry):**
+
+| Package | Version | Source |
+|---------|---------|--------|
+| pnpm | 11.10.0 | npm registry |
+| Next.js | 16.2.10 | npm registry |
+| NestJS (@nestjs/core) | 11.1.27 | npm registry |
+| Prisma | 7.8.0 | npm registry |
+| React | 19.2.7 | npm registry |
+| React DOM | 19.2.7 | npm registry |
+| TypeScript | 6.0.3 | npm registry |
+| Zod | 4.4.3 | npm registry |
+| Tailwind CSS | 4.3.2 | npm registry |
+| BullMQ | 5.79.3 | npm registry (rechecked 2026-07-07) |
+| Vitest | 4.1.10 | npm registry |
+| Jest | 30.4.2 | npm registry |
+| Playwright | 1.61.1 | npm registry |
+| @playwright/test | 1.61.1 | npm registry |
+| React Hook Form | 7.81.0 | npm registry |
+| ioredis | 5.11.1 | npm registry |
+| @types/node | 26.1.0 | npm registry |
+| @types/react | 19.2.17 | npm registry |
+| @types/react-dom | 19.2.3 | npm registry |
+
+### Versions Still Requiring Verification
+
+| Tool | Expected Baseline | Verification Source |
 |------|------------------|---------------------|
-| Node.js | Latest LTS (likely 24.x) | Official nodejs.org release page |
-| PostgreSQL | Latest stable (likely 17.x) | Official postgresql.org |
-| Redis | Latest stable (likely 8.x) | Official redis.io |
-| MinIO | Latest stable | Official min.io release page |
-| Zod | Latest stable | npm registry |
-| BullMQ | Latest stable | npm registry |
-| Tailwind CSS | Latest stable | npm registry |
-| Jest | Latest stable | npm registry |
-| Vitest | Latest stable | npm registry |
-| Playwright | Latest stable | npm registry |
-| React Hook Form | Latest stable | npm registry |
-| shadcn/ui | Latest compatible | shadcn/ui docs (not an npm package) |
+| shadcn/ui | Latest compatible | shadcn/ui docs (not an npm package — follow official installation guide) |
 
-> **Note:** These versions will be verified when Node.js and pnpm are installed in the development environment and `pnpm add` is used with `@latest`. Until then, the baseline versions above are placeholders.
+> **Version research methodology:** Always consult official documentation, npm registry, Docker Hub, GitHub releases, and community forums/tutorials when verifying latest stable versions. Do not rely on a single source when multiple distribution channels exist (e.g., MinIO GitHub vs Docker Hub).
 
 ## Development Environment
 
 ### Prerequisites
-- Node.js latest LTS (verify at https://nodejs.org — checked date and version TBD)
-- pnpm 11+ (latest stable: 11.10.0 as of 2026-07-07)
+- Node.js 24.18.0 (latest LTS as of 2026-07-07, verified at https://nodejs.org)
+- pnpm 11.10.0 (latest stable as of 2026-07-07)
 - Docker & Docker Compose
 - Git
 
@@ -75,25 +99,25 @@ All dependency versions must follow the project version verification policy defi
 ```yaml
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18.4-alpine3.23
     ports: [5432]
     environment: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
     volumes: pgdata:/var/lib/postgresql/data
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.8.0-alpine3.23
     ports: [6379]
     volumes: redisdata:/data
 
   minio:
-    image: minio/minio:RELEASE.2025-06-26T23-31-55Z
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z
     ports: [9000, 9001]
     environment: MINIO_ROOT_USER, MINIO_ROOT_PASSWORD
     volumes: miniodata:/data
     command: server /data --console-address ":9001"
 ```
 
-> **Note:** Docker image tags above are placeholder targets. PostgreSQL 17, Redis 8, and the latest stable MinIO tag must be verified from official sources before the actual `docker-compose.yml` is created. The `minio/minio:latest` tag must not be used.
+> **Note:** All Docker image tags verified against Docker Hub on 2026-07-07. PostgreSQL uses 18.4-alpine3.23, Redis uses 8.8.0-alpine3.23. MinIO uses a pinned Docker Hub tag; see version notes above regarding GitHub vs Docker Hub tag discrepancies.
 
 ### Environment Variables (`.env.example` placeholder categories)
 - **Database**: `DATABASE_URL`
