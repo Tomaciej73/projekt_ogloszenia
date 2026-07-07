@@ -1,0 +1,16 @@
+{
+  "name": "@multiportal/connectors",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Provider-agnostic connector interface and marketplace connector implementations",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "lint": "echo ok",
+    "test": "echo ok",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@multiportal/shared": "workspace:*"
+  }
+}

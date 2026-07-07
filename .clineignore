@@ -1,0 +1,32 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# build outputs
+dist/
+build/
+.next/
+out/
+coverage/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# local db/storage
+*.sqlite
+*.db
+.minio/
+storage/
+
+# logs
+*.log
+logs/
+
+# generated
+*.map
+*.min.js
+
+# package manager
+.pnpm-store/
