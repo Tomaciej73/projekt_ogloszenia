@@ -2,10 +2,7 @@ FROM node:24.18.0-alpine
 
 WORKDIR /app
 
-RUN npm install dotenv
-
 COPY apps/web/ apps/web/
-COPY packages/ packages/
 
 EXPOSE 3000
 
