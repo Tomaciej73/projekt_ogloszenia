@@ -282,16 +282,27 @@
       const res = await fetch(API + '/listings/' + id, { headers: { 'Authorization': 'Bearer ' + token } });
       const data = await res.json();
       const l = data.listing || data;
+      const photos = l.photoUrls || [];
+      const photoGallery = photos.length > 0 ? `
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin:0.75rem 0">
+          ${photos.map((url, i) => `
+            <div style="position:relative;cursor:pointer" onclick="showPhotoFullscreen('${encodeURIComponent(url)}')">
+              <img src="${url}" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.2)" onerror="this.parentElement.style.display='none'" loading="lazy">
+              ${i === 0 ? '<span style="position:absolute;top:4px;left:4px;background:#e94560;color:#fff;font-size:0.6rem;padding:2px 6px;border-radius:4px">★ Primary</span>' : ''}
+            </div>
+          `).join('')}
+        </div>
+      ` : '<p style="color:rgba(255,255,255,0.4)">No photos</p>';
+
       document.getElementById('detailContent').innerHTML = `
         <h3>${escapeHtml(l.title)}</h3>
         <p class="price">${Number(l.price).toFixed(2)} ${l.currency}</p>
         <p><strong>Category:</strong> ${escapeHtml(l.category)}</p>
         <p><strong>Status:</strong> <span class="status-badge status-${l.status}">${l.status}</span></p>
         <p><strong>Description:</strong> ${escapeHtml(l.description || 'N/A')}</p>
-        <p><strong>Created:</strong> ${new Date(l.createdAt).toLocaleString()}</p>
-        <p><strong>Updated:</strong> ${new Date(l.updatedAt).toLocaleString()}</p>
-        <p><strong>ID:</strong> ${l.id}</p>
-        ${l.photoUrls && l.photoUrls.length ? '<p><strong>Photos:</strong> ' + l.photoUrls.length + '</p>' : ''}
+        ${photoGallery}
+        <p style="font-size:0.75rem;color:rgba(255,255,255,0.3);margin-top:0.5rem"><strong>Created:</strong> ${new Date(l.createdAt).toLocaleString()}</p>
+        <p style="font-size:0.75rem;color:rgba(255,255,255,0.3)"><strong>ID:</strong> ${l.id}</p>
         <div style="margin-top:1rem;display:flex;gap:0.5rem">
           <button onclick="closeDetail();showEdit('${l.id}')">✏️ Edit</button>
           <button class="secondary" onclick="closeDetail()">Close</button>
@@ -302,14 +313,181 @@
 
     function closeDetail() { document.getElementById('detailModal').classList.remove('active'); }
 
+    function showPhotoFullscreen(url) {
+      const win = window.open('', '_blank', 'width=800,height=600');
+      win.document.write(`<img src="${url}" style="max-width:100%;max-height:100vh;display:block;margin:auto">`);
+    }
+
+    // ── PHOTO HELPERS ──
+    function readFileAsBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function uploadPhotoForListing(file, listingId) {
+      const token = localStorage.getItem('token');
+      const data = await readFileAsBase64(file);
+      const body = { fileName: file.name, contentType: file.type, fileSize: file.size, data, listingId };
+      const res = await fetch(API + '/media/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error('Failed to upload file');
+      const { publicUrl } = await res.json();
+      return publicUrl;
+    }
+
+    async function refreshPhotoGrid(listingId) {
+      const token = localStorage.getItem('token');
+      const res = await fetch(API + '/listings/' + listingId, { headers: { 'Authorization': 'Bearer ' + token } });
+      const data = await res.json();
+      const l = data.listing || data;
+      buildPhotoGrid(listingId, l.photoUrls || []);
+    }
+
+    function buildPhotoGrid(listingId, photoUrls) {
+      const grid = document.getElementById('editPhotoGrid');
+      if (!grid) return;
+      if (photoUrls.length === 0) {
+        grid.innerHTML = '<p style="color:rgba(255,255,255,0.4);font-size:0.85rem;grid-column:1/-1">No photos yet. Use the uploader below.</p>';
+        return;
+      }
+      grid.innerHTML = photoUrls.map((url, i) => `
+        <div class="photo-thumb" draggable="true" data-index="${i}" data-url="${encodeURIComponent(url)}"
+             ondragstart="dragStart(event)" ondragover="dragOver(event)" ondragenter="dragEnter(event)" ondragleave="dragLeave(event)" ondrop="dropPhoto(event, '${listingId}')"
+             style="position:relative;aspect-ratio:1;overflow:hidden;border-radius:8px;border:2px solid ${i===0?'#e94560':'rgba(255,255,255,0.15)'};cursor:grab;transition:border 0.2s;background:rgba(255,255,255,0.05)">
+          <img src="${url}" style="width:100%;height:100%;object-fit:cover" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22><text y=%2220%22 x=%228%22 font-size=%2212%22>🖼</text></svg>'">
+          <button onclick="event.stopPropagation();deletePhoto('${listingId}',${i})"
+                  style="position:absolute;top:4px;right:4px;width:24px;height:24px;background:rgba(220,38,38,0.9);border:none;border-radius:50%;color:#fff;font-size:14px;line-height:24px;padding:0;cursor:pointer"
+                  title="Delete photo">×</button>
+          ${i === 0 ? '<span style="position:absolute;bottom:4px;left:4px;background:#e94560;color:#fff;font-size:0.55rem;padding:2px 6px;border-radius:4px">★ Primary</span>' : `
+          <button onclick="event.stopPropagation();setPrimaryPhoto('${listingId}',${i})"
+                  style="position:absolute;bottom:4px;right:4px;width:22px;height:22px;background:rgba(0,0,0,0.6);border:none;border-radius:50%;color:#fff;font-size:12px;line-height:22px;padding:0;cursor:pointer"
+                  title="Set as primary">★</button>`}
+        </div>
+      `).join('');
+    }
+
+    async function deletePhoto(listingId, index) {
+      if (!confirm('Remove this photo?')) return;
+      const token = localStorage.getItem('token');
+      try {
+        const res = await fetch(API + '/listings/' + listingId + '/photos/' + index, {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + token },
+        });
+        if (!res.ok) throw new Error((await res.json()).error || 'Delete failed');
+        refreshPhotoGrid(listingId);
+      } catch(e) { toast(e.message, 'error'); }
+    }
+
+    async function setPrimaryPhoto(listingId, index) {
+      const token = localStorage.getItem('token');
+      try {
+        // Fetch current photos
+        const r1 = await fetch(API + '/listings/' + listingId, { headers: { 'Authorization': 'Bearer ' + token } });
+        const d1 = await r1.json();
+        const l = d1.listing || d1;
+        const photos = [...(l.photoUrls || [])];
+        if (index >= photos.length) return;
+        // Move selected to front
+        const [moved] = photos.splice(index, 1);
+        photos.unshift(moved);
+        // Save reordered
+        const res = await fetch(API + '/listings/' + listingId + '/photos', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ urls: photos }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error || 'Reorder failed');
+        refreshPhotoGrid(listingId);
+      } catch(e) { toast(e.message, 'error'); }
+    }
+
+    // ── DRAG & DROP REORDER ──
+    let draggedIndex = null;
+    function dragStart(e) { draggedIndex = parseInt(e.target.closest('.photo-thumb').dataset.index); e.dataTransfer.effectAllowed = 'move'; }
+    function dragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+    function dragEnter(e) { e.target.closest('.photo-thumb')?.style.setProperty('border-color', '#f39c12', 'important'); }
+    function dragLeave(e) { e.target.closest('.photo-thumb')?.style.setProperty('border-color', ''); }
+    async function dropPhoto(e, listingId) {
+      e.preventDefault();
+      const target = e.target.closest('.photo-thumb');
+      if (!target) return;
+      target.style.borderColor = '';
+      const targetIndex = parseInt(target.dataset.index);
+      if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+      const token = localStorage.getItem('token');
+      try {
+        const r1 = await fetch(API + '/listings/' + listingId, { headers: { 'Authorization': 'Bearer ' + token } });
+        const d1 = await r1.json();
+        const l = d1.listing || d1;
+        const photos = [...(l.photoUrls || [])];
+        const [moved] = photos.splice(draggedIndex, 1);
+        photos.splice(targetIndex, 0, moved);
+        const res = await fetch(API + '/listings/' + listingId + '/photos', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ urls: photos }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error || 'Reorder failed');
+        draggedIndex = null;
+        refreshPhotoGrid(listingId);
+      } catch(e) { toast(e.message, 'error'); }
+    }
+
+    async function addPhotosFromEdit(listingId) {
+      const input = document.getElementById('editPhotoInput');
+      if (!input || !input.files || input.files.length === 0) return;
+      const files = Array.from(input.files);
+      const urls = [];
+      for (const file of files) {
+        try {
+          const url = await uploadPhotoForListing(file, listingId);
+          urls.push(url);
+          toast('📷 Uploaded: ' + file.name, 'success');
+        } catch(e) {
+          toast('❌ Failed: ' + file.name + ' - ' + e.message, 'error');
+        }
+      }
+      if (urls.length > 0) {
+        const token = localStorage.getItem('token');
+        await fetch(API + '/listings/' + listingId + '/photos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ urls }),
+        });
+        refreshPhotoGrid(listingId);
+      }
+      input.value = '';
+    }
+
     // ── EDIT MODAL ──
     function showEdit(id) {
       document.getElementById('detailModal').classList.remove('active');
+      document.getElementById('editModal').classList.add('active');
       const token = localStorage.getItem('token');
       fetch(API + '/listings/' + id, { headers: { 'Authorization': 'Bearer ' + token } })
         .then(r => r.json())
         .then(data => {
           const l = data.listing || data;
+          const photoUrls = l.photoUrls || [];
+          const photosSection = `
+            <label style="margin-top:1rem">Photos (${photoUrls.length})</label>
+            <div id="editPhotoGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:0.5rem;margin-bottom:0.5rem"></div>
+            <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
+              <input type="file" id="editPhotoInput" accept="image/*" multiple style="flex:1;margin-bottom:0;padding:8px">
+              <button type="button" onclick="addPhotosFromEdit('${l.id}')" style="width:auto;padding:8px 16px;white-space:nowrap">📷 Add</button>
+            </div>
+            <p style="font-size:0.7rem;color:rgba(255,255,255,0.4);margin-top:-0.5rem;margin-bottom:1rem">Drag to reorder · Click ★ to set as primary</p>
+          `;
+
           document.getElementById('editContent').innerHTML = `
             <h3>Edit Listing</h3>
             <label>Title</label>
@@ -326,12 +504,14 @@
               <option value="ready" ${l.status==='ready'?'selected':''}>Ready</option>
               <option value="archived" ${l.status==='archived'?'selected':''}>Archived</option>
             </select>
+            ${photosSection}
             <div style="margin-top:1rem;display:flex;gap:0.5rem">
               <button onclick="saveEdit('${l.id}')">💾 Save</button>
               <button class="secondary" onclick="closeEdit()">Cancel</button>
             </div>
           `;
-          document.getElementById('editModal').classList.add('active');
+          // Build photo grid after DOM is ready
+          setTimeout(() => buildPhotoGrid(l.id, photoUrls), 0);
         });
     }
 

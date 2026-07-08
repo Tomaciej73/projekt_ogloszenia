@@ -7,7 +7,7 @@ const { Queue } = require("bullmq");
 const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
-const { getPresignedUploadUrl } = require("./minio");
+const { getPresignedUploadUrl, ensureBucket, minioClient, BUCKET } = require("./minio");
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6739";
 const publicationQueue = new Queue("publication", { connection: { url: REDIS_URL } });
@@ -299,6 +299,45 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // ── Listing Photos ──
+    const photosMatch = path.match(/^\/listings\/([^/]+)\/photos(?:\/(\d+))?$/);
+    if (photosMatch) {
+      const listingId = photosMatch[1];
+      const photoIndex = photosMatch[2] !== undefined ? parseInt(photosMatch[2], 10) : undefined;
+      const uid = getUserId(req);
+      if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
+
+      const listing = await prisma.listingDraft.findUnique({ where: { id: listingId, userId: uid } });
+      if (!listing) return jsonResponse(res, 404, { error: "Listing not found" });
+
+      // POST /listings/:id/photos — append photo URLs
+      if (req.method === "POST") {
+        const body = await parseBody(req).catch(() => null);
+        if (!body || !Array.isArray(body.urls)) return jsonResponse(res, 400, { error: "urls array is required." });
+        const current = listing.photoUrls || [];
+        const updated = [...current, ...body.urls];
+        await prisma.listingDraft.update({ where: { id: listingId }, data: { photoUrls: updated } });
+        return jsonResponse(res, 200, { photoUrls: updated });
+      }
+
+      // PUT /listings/:id/photos — replace entire photoUrls array (reorder)
+      if (req.method === "PUT") {
+        const body = await parseBody(req).catch(() => null);
+        if (!body || !Array.isArray(body.urls)) return jsonResponse(res, 400, { error: "urls array is required." });
+        await prisma.listingDraft.update({ where: { id: listingId }, data: { photoUrls: body.urls } });
+        return jsonResponse(res, 200, { photoUrls: body.urls });
+      }
+
+      // DELETE /listings/:id/photos/:index — remove a single photo by index
+      if (req.method === "DELETE" && photoIndex !== undefined) {
+        const current = listing.photoUrls || [];
+        if (photoIndex < 0 || photoIndex >= current.length) return jsonResponse(res, 400, { error: "Invalid photo index." });
+        const updated = current.filter((_, i) => i !== photoIndex);
+        await prisma.listingDraft.update({ where: { id: listingId }, data: { photoUrls: updated } });
+        return jsonResponse(res, 200, { photoUrls: updated });
+      }
+    }
+
     // ── Publication Jobs ──
     if (path === "/publication-jobs" && req.method === "POST") {
       const uid = getUserId(req);
@@ -365,6 +404,46 @@ const server = http.createServer(async (req, res) => {
       }
 
       return jsonResponse(res, 201, { uploadUrl, publicUrl, key });
+    }
+
+    // ── Media Upload (direct server-side, base64) ──
+    if (path === "/media/upload" && req.method === "POST") {
+      const uid = getUserId(req);
+      if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
+
+      const body = await parseBody(req).catch(() => null);
+      if (!body || !body.fileName || !body.data) {
+        return jsonResponse(res, 400, { error: "fileName and data (base64) are required." });
+      }
+
+      const buf = Buffer.from(body.data, "base64");
+      const contentType = body.contentType || "application/octet-stream";
+      const key = `uploads/${uid}/${Date.now()}-${sanitize(body.fileName, 200)}`;
+
+      await ensureBucket();
+      await minioClient.putObject(BUCKET, key, buf, buf.length, { "Content-Type": contentType });
+
+      const publicEndpoint = process.env.S3_PUBLIC_ENDPOINT || process.env.S3_ENDPOINT || "http://localhost:9000";
+      const publicUrl = `${publicEndpoint}/${BUCKET}/${key}`;
+
+      // Record media if listingId is provided
+      if (body.listingId) {
+        const listing = await prisma.listingDraft.findUnique({ where: { id: body.listingId } });
+        if (listing) {
+          await prisma.listingMedia.create({
+            data: {
+              url: publicUrl,
+              key,
+              fileName: sanitize(body.fileName, 200),
+              fileSize: body.fileSize || buf.length,
+              mimeType: contentType,
+              listingDraftId: body.listingId,
+            },
+          });
+        }
+      }
+
+      return jsonResponse(res, 201, { publicUrl, key });
     }
 
     // ── Providers ──

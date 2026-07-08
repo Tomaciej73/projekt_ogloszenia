@@ -18,6 +18,20 @@ async function ensureBucket() {
     await minioClient.makeBucket(BUCKET, process.env.S3_REGION || "us-east-1");
     console.log(`Created bucket: ${BUCKET}`);
   }
+
+  // Set public-read bucket policy so browser can GET images directly
+  const policy = {
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Effect: "Allow",
+        Principal: { AWS: ["*"] },
+        Action: ["s3:GetObject"],
+        Resource: [`arn:aws:s3:::${BUCKET}/*`],
+      },
+    ],
+  };
+  await minioClient.setBucketPolicy(BUCKET, JSON.stringify(policy));
 }
 
 /**
