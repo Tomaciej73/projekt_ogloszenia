@@ -254,11 +254,15 @@
           list.innerHTML = '<p style="color:rgba(255,255,255,0.4);padding:1rem">No listings yet. <a href="/create-listing" style="color:#e94560">Create your first one!</a></p>';
           return;
         }
-        list.innerHTML = data.listings.map(l => `
+        list.innerHTML = data.listings.map(l => {
+          const photos = l.photoUrls || [];
+          const firstPhoto = photos.length > 0 ? photos[0] : null;
+          return `
           <div class="listing-row">
+            ${firstPhoto ? `<img src="${firstPhoto}" style="width:60px;height:60px;object-fit:cover;border-radius:8px;margin-right:1rem" onerror="this.style.display='none'">` : ''}
             <div class="info" onclick="showDetail('${l.id}')">
               <strong>${escapeHtml(l.title)}</strong><br>
-              <small style="color:rgba(255,255,255,0.5)">${Number(l.price).toFixed(2)} ${l.currency} · <span class="status-badge status-${l.status}">${l.status}</span></small>
+              <small style="color:rgba(255,255,255,0.5)">${Number(l.price).toFixed(2)} ${l.currency} · <span class="status-badge status-${l.status}">${l.status}</span> · ${photos.length} 📷</small>
             </div>
             <div class="actions">
               <button class="secondary" onclick="showDetail('${l.id}')">👁 View</button>
@@ -266,7 +270,7 @@
               <button class="danger" onclick="deleteListing('${l.id}')">🗑 Delete</button>
             </div>
           </div>
-        `).join('');
+        `}).join('');
       } catch(e) {
         toast('Failed to load listings: ' + e.message, 'error');
       }

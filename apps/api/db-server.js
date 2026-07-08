@@ -237,7 +237,11 @@ const server = http.createServer(async (req, res) => {
       if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
 
       if (req.method === "GET") {
-        const listings = await prisma.listingDraft.findMany({ where: { userId: uid }, orderBy: { createdAt: "desc" } });
+        const listings = await prisma.listingDraft.findMany({
+          where: { userId: uid },
+          orderBy: { createdAt: "desc" },
+          include: { media: true },
+        });
         return jsonResponse(res, 200, { listings });
       }
       if (req.method === "POST") {
@@ -381,8 +385,9 @@ const server = http.createServer(async (req, res) => {
 
     return jsonResponse(res, 404, { error: "Not found", path });
   } catch (err) {
-    console.error(err);
-    return jsonResponse(res, 500, { error: err.message });
+    console.error("Server error:", err.code || err.message);
+    // Never expose raw Prisma/database errors to the client
+    return jsonResponse(res, 500, { error: "Internal server error. Please try again later." });
   }
 });
 

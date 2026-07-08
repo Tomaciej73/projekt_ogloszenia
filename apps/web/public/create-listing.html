@@ -52,6 +52,10 @@
         <label>Category *</label>
         <input type="text" id="category" required placeholder="e.g., Electronics" maxlength="200">
 
+        <label>Photos (up to 20)</label>
+        <input type="file" id="photos" accept="image/*" multiple style="padding:8px">
+        <div id="photoPreview" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem"></div>
+
         <button type="submit" id="submitBtn">Create Draft</button>
       </form>
     </div>
@@ -77,6 +81,33 @@
       setTimeout(() => { window.location.href = '/'; }, 1500);
     }
 
+    // Photo preview on file select
+    document.getElementById('photos').addEventListener('change', function() {
+      const preview = document.getElementById('photoPreview');
+      preview.innerHTML = '';
+      for (const file of this.files) {
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.2)';
+        preview.appendChild(img);
+      }
+    });
+
+    // Upload a single file to MinIO via presigned URL
+    async function uploadPhoto(file) {
+      const res = await fetch(API + '/media/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ fileName: file.name, contentType: file.type, fileSize: file.size }),
+      });
+      if (!res.ok) throw new Error('Failed to get upload URL');
+      const { uploadUrl, publicUrl } = await res.json();
+
+      await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+
+      return publicUrl;
+    }
+
     document.getElementById('listingForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('submitBtn');
@@ -87,13 +118,32 @@
       }
 
       btn.disabled = true;
-      btn.textContent = 'Creating...';
+      btn.textContent = 'Uploading photos...';
+
+      // Upload photos first
+      const photoFiles = document.getElementById('photos').files;
+      const photoUrls = [];
+      try {
+        for (const file of photoFiles) {
+          const url = await uploadPhoto(file);
+          photoUrls.push(url);
+          toast('📷 Uploaded: ' + file.name, 'success');
+        }
+      } catch (err) {
+        toast('❌ Photo upload failed: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Create Draft';
+        return;
+      }
+
+      btn.textContent = 'Creating listing...';
 
       const data = {
         title: document.getElementById('title').value,
         description: document.getElementById('description').value,
         price: Number(document.getElementById('price').value),
         category: document.getElementById('category').value,
+        photoUrls: photoUrls,
       };
 
       try {
@@ -112,7 +162,7 @@
         }
 
         const listing = await res.json();
-        toast('✅ Listing created! ID: ' + (listing.listing?.id || listing.id), 'success');
+        toast('✅ Listing created with ' + photoUrls.length + ' photos!', 'success');
         setTimeout(() => { window.location.href = '/'; }, 1500);
       } catch (error) {
         toast('❌ ' + error.message, 'error');
