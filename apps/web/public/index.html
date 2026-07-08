@@ -89,12 +89,12 @@
               <p style="text-align:center;margin-top:0.75rem"><a href="#" onclick="showForgotPassword()" style="color:rgba(255,255,255,0.5);font-size:0.85rem">Forgot password?</a></p>
             </form>
             <div id="forgotPasswordForm" style="display:none;border-top:1px solid rgba(255,255,255,0.1);padding-top:1rem;margin-top:1rem">
-              <p style="font-size:0.85rem;color:rgba(255,255,255,0.5);margin-bottom:1rem">Enter your email — you will receive a reset code in the server log.</p>
+              <p style="font-size:0.85rem;color:rgba(255,255,255,0.5);margin-bottom:1rem">Enter your email — you will receive a reset code via email.</p>
               <label>Email</label>
               <input type="email" id="forgotEmail" required placeholder="you@example.com">
               <button type="button" onclick="handleForgotPassword()" id="forgotBtn">Send Reset Code</button>
               <div id="resetCodeSection" style="display:none;margin-top:1rem">
-                <label>Reset Code (from server log)</label>
+                <label>Reset Code (from your email)</label>
                 <input type="text" id="resetToken" required placeholder="Paste the reset token">
                 <label>New Password</label>
                 <input type="password" id="resetPassword" required minlength="8" placeholder="New password (min 8 chars)">
@@ -568,11 +568,8 @@
           body: JSON.stringify({ email: document.getElementById('forgotEmail').value }),
         });
         const data = await res.json();
-        if (data.devToken) {
-          document.getElementById('resetToken').value = data.devToken;
-          document.getElementById('resetCodeSection').style.display = 'block';
-        }
-        toast(data.message || 'Reset code sent. Check server logs.', 'success');
+        document.getElementById('resetCodeSection').style.display = 'block';
+        toast(data.message || 'Reset code sent. Check your email.', 'success');
       } catch(e) { toast(e.message, 'error'); }
       finally { btn.disabled = false; btn.textContent = 'Send Reset Code'; }
     }

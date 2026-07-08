@@ -8,6 +8,7 @@ const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
 const { getPresignedUploadUrl, ensureBucket, minioClient, BUCKET } = require("./minio");
+const { sendPasswordResetEmail } = require("./mail");
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6739";
 const publicationQueue = new Queue("publication", { connection: { url: REDIS_URL } });
@@ -198,8 +199,15 @@ const server = http.createServer(async (req, res) => {
       const rToken = crypto.randomBytes(32).toString("hex");
       resetTokens.set(email, { token: rToken, expires: Date.now() + 3600000 }); // 1 hour
 
-      console.log(`[DEV] Password reset token for ${email}: ${rToken}`);
-      return jsonResponse(res, 200, { message: "If this email is registered, a reset link has been sent.", devToken: rToken });
+      // Send password reset email via SMTP
+      try {
+        await sendPasswordResetEmail(email, rToken, user.name);
+        console.log(`Password reset email sent to ${email}`);
+      } catch (mailErr) {
+        console.error("Failed to send reset email:", mailErr.message);
+      }
+
+      return jsonResponse(res, 200, { message: "If this email is registered, a reset link has been sent." });
     }
 
     // ── Auth: Reset Password ──
