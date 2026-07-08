@@ -46,7 +46,9 @@ A fully working application is running: user registration/login with PBKDF2+SHA5
 
 ## Recent Changes
 
-- 2026-07-08: Full photo management CRUD — added `POST/PUT/DELETE /listings/:id/photos` endpoints. Edit modal now has drag-reorder grid, delete individual photos, set primary photo (★), add new photos. Detail modal shows gallery with primary badge and fullscreen click. Create flow: draft first, then upload photos with listingId attachment + append to draft.
+- 2026-07-08: Fixed DELETE 500 — foreign key RESTRICT on `ListingMedia` blocked deletion. Now deletes related media records first.
+- 2026-07-08: Switched photo upload from presigned URL (broken by hostname mismatch in AWS signature) to server-side base64 upload via `POST /media/upload`.
+- 2026-07-08: Full photo management CRUD — added `POST/PUT/DELETE /listings/:id/photos` endpoints. Edit modal has drag-reorder grid, delete, set primary, add. Detail modal shows gallery. Create flow: draft first, then upload photos.
 - 2026-07-08: Fixed `/media/upload-url` 500 error — P2003 foreign key violation. Now skips DB insert when `listingId` is missing/invalid.
 - 2026-07-08: Fixed presigned URLs using internal Docker hostname (`minio:9000`) — added `S3_PUBLIC_ENDPOINT` and public-read bucket policy.
 - 2026-07-08: Fixed login bug — `verifyPassword()` TypeError on malformed hash + PostgreSQL password mismatch in Docker container.

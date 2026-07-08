@@ -294,6 +294,8 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 200, { listing });
       }
       if (req.method === "DELETE") {
+        // Delete related media first to avoid RESTRICT foreign key violation
+        await prisma.listingMedia.deleteMany({ where: { listingDraftId: id } });
         await prisma.listingDraft.delete({ where: { id, userId: uid } });
         return jsonResponse(res, 200, { deleted: true, id });
       }
