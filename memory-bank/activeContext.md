@@ -46,6 +46,11 @@ A fully working application is running: user registration/login with PBKDF2+SHA5
 
 ## Recent Changes
 
+- 2026-07-08: Fixed `/media/upload-url` 500 error — P2003 foreign key violation when `listingId` was `"pending"`. Now skips DB insert when `listingId` is missing/invalid; upload-first-then-create-draft flow works.
+- 2026-07-08: Fixed presigned URLs using internal Docker hostname (`minio:9000`) — added `S3_PUBLIC_ENDPOINT` env variable to generate browser-accessible URLs (`localhost:9000`). Both `uploadUrl` and `publicUrl` now use public endpoint.
+- 2026-07-08: Fixed login bug — "Internal server error" instead of "Invalid email or password" when using wrong credentials. Root cause: `verifyPassword()` threw `TypeError` on malformed/null `passwordHash`. Also fixed PostgreSQL password mismatch in Docker container (P1000 auth failed).
+- 2026-07-08: Photo upload feature added to create-listing page (presigned URL upload to MinIO + preview)
+- 2026-07-08: Dashboard shows photo count and thumbnails for each listing
 - 2026-07-07: Phase 4 — functional app running: auth, listing CRUD, publication, frontend dashboard
 - 2026-07-07: Docker Compose extended with `api` and `web` service containers (`profile: full`)
 - 2026-07-07: Password reset flow added (`/auth/forgot-password`, `/auth/reset-password`)

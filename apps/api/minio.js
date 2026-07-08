@@ -32,9 +32,14 @@ async function getPresignedUploadUrl(key, contentType, expiry = 3600) {
 
   const uploadUrl = await minioClient.presignedPutObject(BUCKET, key, expiry);
 
-  const publicUrl = `http://localhost:${process.env.MINIO_API_PORT || 9000}/${BUCKET}/${key}`;
+  // Replace internal Docker hostname (minio) with public endpoint for browser access
+  const internalHost = `${(process.env.S3_ENDPOINT).replace(/https?:\/\//, "")}`;
+  const publicEndpoint = process.env.S3_PUBLIC_ENDPOINT || process.env.S3_ENDPOINT;
+  const publicUploadUrl = uploadUrl.replace(internalHost, publicEndpoint.replace(/https?:\/\//, ""));
 
-  return { uploadUrl, publicUrl, key };
+  const publicUrl = `${publicEndpoint}/${BUCKET}/${key}`;
+
+  return { uploadUrl: publicUploadUrl, publicUrl, key };
 }
 
 module.exports = { getPresignedUploadUrl, ensureBucket, minioClient, BUCKET };

@@ -83,7 +83,10 @@ function hashPassword(pw) {
 }
 
 function verifyPassword(pw, stored) {
-  const [salt, hash] = stored.split(":");
+  if (!stored || !stored.includes(":")) return false;
+  const parts = stored.split(":");
+  if (parts.length !== 2) return false;
+  const [salt, hash] = parts;
   return hash === crypto.pbkdf2Sync(pw, salt, 100000, 64, "sha512").toString("hex");
 }
 
@@ -170,8 +173,10 @@ const server = http.createServer(async (req, res) => {
       if (!body.password) return jsonResponse(res, 400, { error: "Password is required." });
 
       const user = await prisma.user.findUnique({ where: { email } });
-      if (!user || !verifyPassword(body.password, user.passwordHash))
-        return jsonResponse(res, 401, { error: "Invalid email or password" });
+      if (!user) return jsonResponse(res, 401, { error: "Invalid email or password" });
+
+      const pwdOk = verifyPassword(body.password, user.passwordHash);
+      if (!pwdOk) return jsonResponse(res, 401, { error: "Invalid email or password" });
 
       await seedProviders();
       const token = signToken(user.id);
@@ -342,17 +347,22 @@ const server = http.createServer(async (req, res) => {
       const key = `uploads/${uid}/${Date.now()}-${sanitize(body.fileName, 200)}`;
       const { uploadUrl, publicUrl } = await getPresignedUploadUrl(key, body.contentType);
 
-      // Record media in database
-      await prisma.listingMedia.create({
-        data: {
-          url: publicUrl,
-          key,
-          fileName: sanitize(body.fileName, 200),
-          fileSize: body.fileSize || 0,
-          mimeType: body.contentType,
-          listingDraftId: body.listingId || "pending",
-        },
-      });
+      // Only record media if listingId is provided and belongs to the user
+      if (body.listingId) {
+        const listing = await prisma.listingDraft.findUnique({ where: { id: body.listingId } });
+        if (listing) {
+          await prisma.listingMedia.create({
+            data: {
+              url: publicUrl,
+              key,
+              fileName: sanitize(body.fileName, 200),
+              fileSize: body.fileSize || 0,
+              mimeType: body.contentType,
+              listingDraftId: body.listingId,
+            },
+          });
+        }
+      }
 
       return jsonResponse(res, 201, { uploadUrl, publicUrl, key });
     }
@@ -385,7 +395,7 @@ const server = http.createServer(async (req, res) => {
 
     return jsonResponse(res, 404, { error: "Not found", path });
   } catch (err) {
-    console.error("Server error:", err.code || err.message);
+    console.error("Server error:", err.code || err.message, err.stack?.split("\n")[1]?.trim() || "");
     // Never expose raw Prisma/database errors to the client
     return jsonResponse(res, 500, { error: "Internal server error. Please try again later." });
   }
