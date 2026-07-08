@@ -251,13 +251,15 @@ const server = http.createServer(async (req, res) => {
         if (!title) return jsonResponse(res, 400, { error: "Title is required." });
 
         const ws = await prisma.workspace.findFirst({ where: { members: { some: { userId: uid } } } });
+        if (!ws) return jsonResponse(res, 400, { error: "No workspace found. Please register first." });
+
         const listing = await prisma.listingDraft.create({
           data: {
             title, description, price: Number(body.price) || 0,
             currency: body.currency || "PLN", category: category || "Other",
             attributes: body.attributes || {}, location: body.location || {},
             photoUrls: body.photoUrls || [], deliveryOptions: body.deliveryOptions || [],
-            userId: uid, workspaceId: body.workspaceId || ws?.id || "",
+            userId: uid, workspaceId: ws.id,
           },
         });
         return jsonResponse(res, 201, { listing });

@@ -6,98 +6,116 @@
   <title>Create Listing — MultiPortal</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
-    header { background: #1a1a2e; color: white; padding: 1.5rem; text-align: center; }
-    header a { color: #e94560; text-decoration: none; }
-    main { max-width: 650px; margin: 2rem auto; padding: 0 1rem; }
-    .form-card { background: white; border-radius: 12px; padding: 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-    .form-card h1 { font-size: 1.5rem; margin-bottom: 1.5rem; color: #1a1a2e; }
-    label { display: block; margin-bottom: 0.3rem; font-weight: 600; font-size: 0.9rem; }
-    input, textarea, select { width: 100%; padding: 10px; margin-bottom: 1rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; }
-    textarea { resize: vertical; min-height: 100px; }
-    button { width: 100%; padding: 14px; background: #e94560; color: white; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: 600; cursor: pointer; }
-    button:hover { background: #c23152; }
-    button:disabled { background: #999; cursor: not-allowed; }
-    .result { margin-top: 1rem; padding: 1rem; border-radius: 8px; display: none; }
-    .result.success { display: block; background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-    .result.error { display: block; background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-    footer { text-align: center; padding: 2rem; color: #999; font-size: 0.9rem; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #0f0c29, #302b63, #24243e); min-height: 100vh; color: #fff; }
+    .container { max-width: 650px; margin: 0 auto; padding: 2rem; }
+    header { text-align: center; padding: 2rem 0; }
+    header h1 { font-size: 1.8rem; background: linear-gradient(90deg, #e94560, #f39c12); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    header a { color: rgba(255,255,255,0.5); text-decoration: none; font-size: 0.9rem; }
+    .card { background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 2.5rem; }
+    .card h1 { font-size: 1.5rem; margin-bottom: 1.5rem; color: #e94560; text-align: left; background: none; -webkit-text-fill-color: #e94560; }
+    label { display: block; margin-bottom: 0.3rem; font-weight: 600; font-size: 0.85rem; color: rgba(255,255,255,0.8); }
+    input, textarea { width: 100%; padding: 12px; margin-bottom: 1rem; border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; background: rgba(255,255,255,0.08); color: #fff; font-size: 1rem; }
+    input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.35); }
+    textarea { resize: vertical; min-height: 120px; }
+    button { width: 100%; padding: 14px; background: linear-gradient(90deg, #e94560, #c23152); color: white; border: none; border-radius: 10px; font-size: 1.1rem; font-weight: 700; cursor: pointer; transition: transform 0.1s; }
+    button:hover { transform: scale(1.02); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 2000; display: flex; flex-direction: column; gap: 0.5rem; }
+    .toast { padding: 1rem 1.5rem; border-radius: 10px; color: #fff; font-weight: 600; font-size: 0.9rem; animation: slideIn 0.3s ease; max-width: 400px; }
+    .toast.success { background: rgba(34,197,94,0.9); }
+    .toast.error { background: rgba(220,38,38,0.9); }
+    .toast.warning { background: rgba(245,158,11,0.9); }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    footer { text-align: center; padding: 2rem; color: rgba(255,255,255,0.3); font-size: 0.85rem; }
   </style>
 </head>
 <body>
-  <header>
-    <a href="/">← Back to Dashboard</a>
-    <h1>MultiPortal Listing Manager</h1>
-  </header>
+  <div class="toast-container" id="toastContainer"></div>
+  <div class="container">
+    <header>
+      <a href="/">← Back to Dashboard</a>
+      <h1>MultiPortal Listing Manager</h1>
+    </header>
 
-  <main>
-    <div class="form-card">
+    <div class="card">
       <h1>📝 Create Listing Draft</h1>
       <form id="listingForm">
         <label>Title *</label>
-        <input type="text" id="title" required placeholder="e.g., iPhone 15 Pro 256GB">
+        <input type="text" id="title" required placeholder="e.g., iPhone 15 Pro 256GB" maxlength="500">
 
         <label>Description *</label>
-        <textarea id="description" required placeholder="Describe your item in detail..."></textarea>
+        <textarea id="description" required placeholder="Describe your item in detail... (max 10,000 chars)" maxlength="10000"></textarea>
 
         <label>Price (PLN) *</label>
         <input type="number" id="price" min="0" step="0.01" required placeholder="0.00">
 
         <label>Category *</label>
-        <input type="text" id="category" required placeholder="e.g., Electronics">
-
-        <label>Workspace</label>
-        <input type="text" id="workspaceId" value="workspace-1" readonly>
+        <input type="text" id="category" required placeholder="e.g., Electronics" maxlength="200">
 
         <button type="submit" id="submitBtn">Create Draft</button>
       </form>
-
-      <div id="result" class="result"></div>
     </div>
-  </main>
-
-  <footer>
-    <p>MultiPortal Listing Manager v0.0.0 — Development Mode</p>
-  </footer>
+  </div>
+  <footer>MultiPortal Listing Manager v0.3.0 · Development Mode</footer>
 
   <script>
+    const API = 'http://localhost:3001';
+
+    function toast(msg, type) {
+      const c = document.getElementById('toastContainer');
+      const t = document.createElement('div');
+      t.className = 'toast ' + type;
+      t.textContent = msg;
+      c.appendChild(t);
+      setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; setTimeout(() => t.remove(), 300); }, 4000);
+    }
+
+    // Check auth on page load
+    const token = localStorage.getItem('token');
+    if (!token) {
+      toast('Please log in first. Redirecting...', 'warning');
+      setTimeout(() => { window.location.href = '/'; }, 1500);
+    }
+
     document.getElementById('listingForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('submitBtn');
-      const result = document.getElementById('result');
+
+      if (!token) {
+        window.location.href = '/';
+        return;
+      }
 
       btn.disabled = true;
       btn.textContent = 'Creating...';
-      result.className = 'result';
-      result.style.display = 'none';
 
       const data = {
         title: document.getElementById('title').value,
         description: document.getElementById('description').value,
         price: Number(document.getElementById('price').value),
         category: document.getElementById('category').value,
-        workspaceId: document.getElementById('workspaceId').value,
       };
 
       try {
-        const res = await fetch('http://localhost:3001/listings', {
+        const res = await fetch(API + '/listings', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token,
+          },
           body: JSON.stringify(data),
         });
 
         if (!res.ok) {
           const err = await res.json();
-          throw new Error(err.error || err.message || 'Request failed');
+          throw new Error(err.error || 'Failed to create listing');
         }
 
         const listing = await res.json();
-        result.className = 'result success';
-        result.innerHTML = `✅ <strong>Listing created!</strong><br>ID: ${listing.id}<br>Status: ${listing.status}<br><br><a href="/">Return to dashboard</a>`;
+        toast('✅ Listing created! ID: ' + (listing.listing?.id || listing.id), 'success');
+        setTimeout(() => { window.location.href = '/'; }, 1500);
       } catch (error) {
-        result.className = 'result error';
-        result.innerHTML = `❌ <strong>Error:</strong> ${error.message}`;
-      } finally {
+        toast('❌ ' + error.message, 'error');
         btn.disabled = false;
         btn.textContent = 'Create Draft';
       }
