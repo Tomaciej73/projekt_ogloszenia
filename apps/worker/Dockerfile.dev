@@ -1,0 +1,10 @@
+FROM node:24.18.0-alpine
+
+WORKDIR /app
+
+RUN npm install bullmq dotenv
+
+COPY apps/worker/worker.js apps/worker/
+COPY .env .env
+
+CMD ["node", "apps/worker/worker.js"]

@@ -2,13 +2,7 @@ FROM node:24.18.0-alpine
 
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@11.10.0 --activate
-
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
-COPY apps/web/package.json apps/web/
-COPY packages/shared/package.json packages/shared/
-
-RUN pnpm install --frozen-lockfile
+RUN npm install dotenv
 
 COPY apps/web/ apps/web/
 COPY packages/ packages/

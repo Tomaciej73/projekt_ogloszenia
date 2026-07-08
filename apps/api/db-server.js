@@ -3,10 +3,14 @@ require("dotenv").config();
 const http = require("http");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
+const { Queue } = require("bullmq");
 const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
 const { getPresignedUploadUrl } = require("./minio");
+
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6739";
+const publicationQueue = new Queue("publication", { connection: { url: REDIS_URL } });
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const JWT_EXPIRY = "24h";
@@ -299,17 +303,18 @@ const server = http.createServer(async (req, res) => {
       const job = await prisma.publicationJob.create({
         data: { idempotencyKey: key, listingDraftId: body.listingId, marketplaceAccountId: account.id, externalListingId: extListing.id, status: "pending" },
       });
-      setTimeout(async () => {
-        try {
-          await prisma.publicationJob.update({ where: { id: job.id }, data: { status: "processing" } });
-          await new Promise(r => setTimeout(r, 300));
-          await prisma.externalListing.update({ where: { id: extListing.id }, data: { externalId: `mock-${Date.now()}`, status: "published" } });
-          await prisma.publicationJob.update({ where: { id: job.id }, data: { status: "success", completedAt: new Date() } });
-        } catch (e) {
-          await prisma.publicationJob.update({ where: { id: job.id }, data: { status: "failed", errorMessage: e.message } });
-        }
-      }, 1000);
-      return jsonResponse(res, 201, { job: { id: job.id, idempotencyKey: key, status: "pending" } });
+
+      // Push to BullMQ queue instead of setTimeout — worker will process async
+      const draft = await prisma.listingDraft.findUnique({ where: { id: body.listingId } });
+      await publicationQueue.add("publish", {
+        jobId: job.id,
+        listingId: body.listingId,
+        accountId: account.id,
+        extListingId: extListing.id,
+        draft: draft ? { title: draft.title, description: draft.description, price: Number(draft.price), currency: draft.currency, category: draft.category } : null,
+      }, { attempts: 3, backoff: { type: "exponential", delay: 2000 } });
+
+      return jsonResponse(res, 201, { job: { id: job.id, idempotencyKey: key, status: "pending", queue: "bullmq" } });
     }
 
     const jobMatch = path.match(/^\/publication-jobs\/([^/]+)$/);

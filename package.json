@@ -29,6 +29,8 @@
     "tsx": "^4.23.0"
   },
   "dependencies": {
+    "bullmq": "^5.79.3",
+    "dotenv": "^17.4.2",
     "jsonwebtoken": "^9.0.3",
     "minio": "^8.0.7"
   }

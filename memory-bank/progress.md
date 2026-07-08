@@ -1,16 +1,9 @@
 # Progress
 
 ## Current Status
-**Phase 4 — Functional Application with Auth & Listing CRUD** (complete)
+**Phase 7 — BullMQ Worker Integrated & Frontend Publication** (complete)
 
-A fully working application is running with:
-- User registration/login (PBKDF2+SHA512+16B salt)
-- Password reset flow (forgot/reset token)  
-- Email validation and input sanitization
-- Listing draft CRUD stored in PostgreSQL via Prisma
-- Publication job creation with mock connector
-- Web frontend dashboard with React-style UI
-- Docker Compose: PostgreSQL 18, Redis 8, MinIO, API container, Web container
+BullMQ worker processes publication jobs from Redis queue (port 6739). API pushes jobs to queue instead of using setTimeout mocks. Frontend dashboard (`/dashboard`) with publication flow for all 3 providers (OLX, Vinted Pro, Facebook Marketplace). JWT auth + MinIO presigned URLs + PBKDF2 password hashing.
 
 ## Completed
 
@@ -27,24 +20,32 @@ A fully working application is running with:
 
 ### Backend API (`apps/api/db-server.js`) v0.3.0
 - [x] `POST /auth/register` — registration with validation
-- [x] `POST /auth/login` — login with Bearer token
+- [x] `POST /auth/login` — login with JWT Bearer token
 - [x] `POST /auth/forgot-password` — generates reset token (1h expiry)
 - [x] `POST /auth/reset-password` — verifies token, changes password
 - [x] `GET /auth/me` — current user info
 - [x] `GET /health` — health check with DB status
 - [x] `GET/POST /listings` — list/create listing drafts (auth required)
 - [x] `GET/PUT/DELETE /listings/:id` — CRUD operations (auth required)
-- [x] `POST /publication-jobs` — create publication with mock processing
+- [x] `POST /publication-jobs` — pushes to BullMQ queue (Redis 6739)
 - [x] `GET /publication-jobs/:id` — job status
 - [x] `GET /providers` — list marketplace providers
 - [x] `GET/POST /marketplace-accounts` — connect provider accounts
+- [x] `POST /media/upload-url` — MinIO presigned URL generation
 - [x] Email validation (regex), password validation (min 8, max 128)
 - [x] Input sanitization (HTML strip, trim, normalize whitespace)
 - [x] Pretty JSON responses (2-space indent)
 
+### Worker (`apps/worker/worker.js`)
+- [x] BullMQ Worker processing `publication` queue
+- [x] Connected to Redis on port 6739
+- [x] Mock connector simulates external API calls
+- [x] 3 retry attempts with exponential backoff (2s, 4s, 8s)
+
 ### Frontend (`apps/web/`)
 - [x] `public/index.html` — landing page with Login/Register tabs + Forgot Password
 - [x] `public/create-listing.html` — listing creation form
+- [x] `public/dashboard.html` — publication dashboard: list listings, select provider, publish
 - [x] Dashboard after login with listing list + stats
 - [x] Session persistence via localStorage (survives refresh/new tab)
 
@@ -57,28 +58,15 @@ A fully working application is running with:
 
 ## Pending (Next Steps)
 
-### Phase 5 — JWT & Production Auth
-1. Replace in-memory token store with JWT
-2. Add token refresh mechanism
-3. Add rate limiting on auth endpoints
-
-### Phase 6 — Media & File Upload
-4. Implement MinIO presigned URL upload
-5. Add media CRUD to listing form
-
-### Phase 7 — Async Publication Worker
-6. Connect BullMQ worker to Redis
-7. Replace setTimeout mock with actual BullMQ queues
-
 ### Phase 8 — Provider Integration
-8. Research OLX official API documentation
-9. Implement OLX connector
-10. Research Vinted Pro, Facebook Marketplace APIs
+1. Research OLX official API documentation
+2. Implement OLX connector
+3. Research Vinted Pro, Facebook Marketplace APIs
 
 ### Phase 9 — Testing
-11. Add backend unit tests (Jest)
-12. Add frontend component tests (Vitest)
-13. Add E2E tests (Playwright)
+4. Add backend unit tests (Jest)
+5. Add frontend component tests (Vitest)
+6. Add E2E tests (Playwright)
 
 ## Known Issues
 - NestJS source code exists but not used at runtime (plain Node.js servers instead)
@@ -106,3 +94,5 @@ A fully working application is running with:
 | 2026-07-07 | Owner's port changes are authoritative | Rule in `.clinerules/01-project.md` |
 | 2026-07-07 | Prisma v7 + pg adapter | Required for Prisma 7+ |
 | 2026-07-07 | Zod for config validation | Lightweight, TypeScript-native |
+| 2026-07-08 | BullMQ for async publication | Reliable job processing with Redis, retries, persistent queue |
+| 2026-07-08 | JWT (jsonwebtoken) for authentication | Stateless, industry standard, replaces in-memory session store |

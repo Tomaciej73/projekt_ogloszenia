@@ -2,24 +2,19 @@ FROM node:24.18.0-alpine
 
 WORKDIR /app
 
-# Install pnpm globally
-RUN corepack enable && corepack prepare pnpm@11.10.0 --activate
-
-# Copy workspace files for dependency resolution
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
-COPY apps/api/package.json apps/api/
-COPY packages/shared/package.json packages/shared/
-COPY packages/config/package.json packages/config/
-COPY packages/connectors/package.json packages/connectors/
-
-RUN pnpm install --frozen-lockfile
+# Install all runtime dependencies
+RUN npm install dotenv pg @prisma/client @prisma/adapter-pg prisma jsonwebtoken bullmq minio
 
 # Copy application source
-COPY apps/api/ apps/api/
+COPY apps/api/db-server.js apps/api/
+COPY apps/api/minio.js apps/api/
+COPY apps/api/prisma/ apps/api/prisma/
 COPY packages/ packages/
+COPY .env .env
+COPY prisma.config.ts prisma.config.ts
 
 # Generate Prisma client
-RUN cd apps/api && npx prisma generate
+RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
 
 EXPOSE 3001
 

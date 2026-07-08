@@ -78,6 +78,23 @@ services:
       redis:
         condition: service_healthy
 
+  worker:
+    container_name: multiportal-worker
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile.dev
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      NODE_ENV: ${NODE_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   web:
     container_name: multiportal-web
     build:
