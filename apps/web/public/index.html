@@ -174,6 +174,7 @@
   <script>
     const API = '';
     const PASSWORD_RULES = 'Use at least 8 characters with uppercase, lowercase, number, and special character.';
+    const PHOTO_FALLBACK_DATA_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ctext y='20' x='8' font-size='12'%3E%F0%9F%96%BC%3C/text%3E%3C/svg%3E";
 
     // ── TOAST ──
     function toast(msg, type) {
@@ -310,7 +311,65 @@
       loadListings();
     }
 
+    function getSafePhotoUrl(url) {
+      if (typeof url !== 'string') return '';
+      const trimmed = url.trim();
+      if (!trimmed) return '';
+      try {
+        const parsed = new URL(trimmed, window.location.origin);
+        if (parsed.origin !== window.location.origin) return '';
+        if (!parsed.pathname.startsWith('/media-files/')) return '';
+        return parsed.href;
+      } catch {
+        return '';
+      }
+    }
+
+    function buildDetailPhotoGallery(photoUrls) {
+      const wrapper = document.createElement('div');
+      const photos = Array.isArray(photoUrls) ? photoUrls : [];
+      const gallery = document.createElement('div');
+      gallery.style.cssText = 'display:flex;gap:0.5rem;flex-wrap:wrap;margin:0.75rem 0';
+
+      photos.forEach((url, index) => {
+        const safeUrl = getSafePhotoUrl(url);
+        if (!safeUrl) return;
+
+        const item = document.createElement('div');
+        item.style.cssText = 'position:relative;cursor:pointer';
+        item.addEventListener('click', () => showPhotoFullscreen(safeUrl));
+
+        const img = document.createElement('img');
+        img.src = safeUrl;
+        img.loading = 'lazy';
+        img.style.cssText = 'width:100px;height:100px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.2)';
+        img.addEventListener('error', () => item.remove());
+        item.appendChild(img);
+
+        if (index === 0) {
+          const badge = document.createElement('span');
+          badge.textContent = '★ Primary';
+          badge.style.cssText = 'position:absolute;top:4px;left:4px;background:#e94560;color:#fff;font-size:0.6rem;padding:2px 6px;border-radius:4px';
+          item.appendChild(badge);
+        }
+
+        gallery.appendChild(item);
+      });
+
+      if (!gallery.childElementCount) {
+        const empty = document.createElement('p');
+        empty.textContent = 'No photos';
+        empty.style.cssText = 'color:rgba(255,255,255,0.4)';
+        wrapper.appendChild(empty);
+        return wrapper;
+      }
+
+      wrapper.appendChild(gallery);
+      return wrapper;
+    }
+
     async function loadListings() {
+      return loadListingsSafe();
       const token = localStorage.getItem('token');
       if (!token) return;
       try {
@@ -346,6 +405,7 @@
 
     // ── DETAIL MODAL ──
     async function showDetail(id) {
+      return showDetailSafe(id);
       const token = localStorage.getItem('token');
       const res = await fetch(API + '/listings/' + id, { headers: { 'Authorization': 'Bearer ' + token } });
       const data = await res.json();
@@ -382,8 +442,7 @@
     function closeDetail() { document.getElementById('detailModal').classList.remove('active'); }
 
     function showPhotoFullscreen(url) {
-      const win = window.open('', '_blank', 'width=800,height=600');
-      win.document.write(`<img src="${url}" style="max-width:100%;max-height:100vh;display:block;margin:auto">`);
+      return showPhotoFullscreenSafe(url);
     }
 
     // ── PHOTO HELPERS ──
@@ -419,6 +478,7 @@
     }
 
     function buildPhotoGrid(listingId, photoUrls) {
+      return buildPhotoGridSafe(listingId, photoUrls);
       const grid = document.getElementById('editPhotoGrid');
       if (!grid) return;
       if (photoUrls.length === 0) {
@@ -676,6 +736,224 @@
         document.getElementById('resetPassword').value = '';
       } catch(e) { toast(e.message, 'error'); }
       finally { btn.disabled = false; btn.textContent = 'Reset Password'; }
+    }
+
+    // Security overrides: keep photo URLs out of innerHTML/document.write paths.
+    async function loadListingsSafe() {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      try {
+        const res = await fetch(API + '/listings', { headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        document.getElementById('listingCount').textContent = (data.listings || []).length;
+        const list = document.getElementById('listingsList');
+        if (!data.listings || data.listings.length === 0) {
+          list.innerHTML = '<p style="color:rgba(255,255,255,0.4);padding:1rem">No listings yet. <a href="/create-listing" style="color:#e94560">Create your first one!</a></p>';
+          return;
+        }
+
+        list.innerHTML = '';
+        const fragment = document.createDocumentFragment();
+
+        data.listings.forEach((l) => {
+          const photos = Array.isArray(l.photoUrls) ? l.photoUrls : [];
+          const row = document.createElement('div');
+          row.className = 'listing-row';
+
+          const firstPhotoUrl = getSafePhotoUrl(photos[0]);
+          if (firstPhotoUrl) {
+            const img = document.createElement('img');
+            img.src = firstPhotoUrl;
+            img.style.cssText = 'width:60px;height:60px;object-fit:cover;border-radius:8px;margin-right:1rem';
+            img.addEventListener('error', () => img.remove());
+            row.appendChild(img);
+          }
+
+          const info = document.createElement('div');
+          info.className = 'info';
+          info.addEventListener('click', () => showDetail(l.id));
+
+          const title = document.createElement('strong');
+          title.textContent = l.title || '';
+          info.appendChild(title);
+          info.appendChild(document.createElement('br'));
+
+          const meta = document.createElement('small');
+          meta.style.color = 'rgba(255,255,255,0.5)';
+          meta.appendChild(document.createTextNode(`${Number(l.price).toFixed(2)} ${l.currency} · `));
+
+          const badge = document.createElement('span');
+          badge.className = `status-badge status-${l.status}`;
+          badge.textContent = l.status;
+          meta.appendChild(badge);
+          meta.appendChild(document.createTextNode(` · ${photos.length} 📷`));
+          info.appendChild(meta);
+          row.appendChild(info);
+
+          const actions = document.createElement('div');
+          actions.className = 'actions';
+
+          const viewBtn = document.createElement('button');
+          viewBtn.className = 'secondary';
+          viewBtn.textContent = '👁 View';
+          viewBtn.addEventListener('click', () => showDetail(l.id));
+          actions.appendChild(viewBtn);
+
+          const editBtn = document.createElement('button');
+          editBtn.className = 'secondary';
+          editBtn.textContent = '✏️ Edit';
+          editBtn.addEventListener('click', () => showEdit(l.id));
+          actions.appendChild(editBtn);
+
+          const deleteBtn = document.createElement('button');
+          deleteBtn.className = 'danger';
+          deleteBtn.textContent = '🗑 Delete';
+          deleteBtn.addEventListener('click', () => deleteListing(l.id));
+          actions.appendChild(deleteBtn);
+
+          row.appendChild(actions);
+          fragment.appendChild(row);
+        });
+
+        list.appendChild(fragment);
+      } catch(e) {
+        toast('Failed to load listings: ' + e.message, 'error');
+      }
+    }
+
+    async function showDetailSafe(id) {
+      const token = localStorage.getItem('token');
+      const res = await fetch(API + '/listings/' + id, { headers: { 'Authorization': 'Bearer ' + token } });
+      const data = await res.json();
+      const l = data.listing || data;
+      const photos = Array.isArray(l.photoUrls) ? l.photoUrls : [];
+      const detailContent = document.getElementById('detailContent');
+
+      detailContent.innerHTML = `
+        <h3>${escapeHtml(l.title)}</h3>
+        <p class="price">${Number(l.price).toFixed(2)} ${l.currency}</p>
+        <p><strong>Category:</strong> ${escapeHtml(l.category)}</p>
+        <p><strong>Status:</strong> <span class="status-badge status-${l.status}">${l.status}</span></p>
+        <p><strong>Description:</strong> ${escapeHtml(l.description || 'N/A')}</p>
+        <div id="detailGallery"></div>
+        <p style="font-size:0.75rem;color:rgba(255,255,255,0.3);margin-top:0.5rem"><strong>Created:</strong> ${new Date(l.createdAt).toLocaleString()}</p>
+        <p style="font-size:0.75rem;color:rgba(255,255,255,0.3)"><strong>ID:</strong> ${l.id}</p>
+        <div style="margin-top:1rem;display:flex;gap:0.5rem">
+          <button id="detailEditBtn">✏️ Edit</button>
+          <button class="secondary" id="detailCloseBtn">Close</button>
+        </div>
+      `;
+
+      const gallerySlot = detailContent.querySelector('#detailGallery');
+      gallerySlot.replaceWith(buildDetailPhotoGallery(photos));
+      detailContent.querySelector('#detailEditBtn').addEventListener('click', () => {
+        closeDetail();
+        showEdit(l.id);
+      });
+      detailContent.querySelector('#detailCloseBtn').addEventListener('click', closeDetail);
+      document.getElementById('detailModal').classList.add('active');
+    }
+
+    function showPhotoFullscreenSafe(url) {
+      const safeUrl = getSafePhotoUrl(url);
+      if (!safeUrl) {
+        toast('Invalid photo URL.', 'error');
+        return;
+      }
+      const win = window.open('', '_blank', 'width=800,height=600');
+      if (!win) {
+        toast('Popup blocked. Allow popups to view the full photo.', 'warning');
+        return;
+      }
+      win.document.title = 'Photo Preview';
+      win.document.body.style.margin = '0';
+      win.document.body.style.background = '#111';
+      win.document.body.style.display = 'flex';
+      win.document.body.style.alignItems = 'center';
+      win.document.body.style.justifyContent = 'center';
+      const img = win.document.createElement('img');
+      img.src = safeUrl;
+      img.style.maxWidth = '100%';
+      img.style.maxHeight = '100vh';
+      img.style.display = 'block';
+      win.document.body.replaceChildren(img);
+    }
+
+    function buildPhotoGridSafe(listingId, photoUrls) {
+      const grid = document.getElementById('editPhotoGrid');
+      if (!grid) return;
+      const photos = Array.isArray(photoUrls) ? photoUrls : [];
+      if (photos.length === 0) {
+        grid.innerHTML = '<p style="color:rgba(255,255,255,0.4);font-size:0.85rem;grid-column:1/-1">No photos yet. Use the uploader below.</p>';
+        return;
+      }
+
+      grid.innerHTML = '';
+      const fragment = document.createDocumentFragment();
+      let renderedPhotos = 0;
+
+      photos.forEach((url, i) => {
+        const safeUrl = getSafePhotoUrl(url);
+        if (!safeUrl) return;
+
+        const thumb = document.createElement('div');
+        thumb.className = 'photo-thumb';
+        thumb.draggable = true;
+        thumb.dataset.index = String(i);
+        thumb.dataset.url = safeUrl;
+        thumb.style.cssText = `position:relative;aspect-ratio:1;overflow:hidden;border-radius:8px;border:2px solid ${i===0?'#e94560':'rgba(255,255,255,0.15)'};cursor:grab;transition:border 0.2s;background:rgba(255,255,255,0.05)`;
+        thumb.addEventListener('dragstart', dragStart);
+        thumb.addEventListener('dragover', dragOver);
+        thumb.addEventListener('dragenter', dragEnter);
+        thumb.addEventListener('dragleave', dragLeave);
+        thumb.addEventListener('drop', (event) => dropPhoto(event, listingId));
+
+        const img = document.createElement('img');
+        img.src = safeUrl;
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+        img.addEventListener('error', () => {
+          img.onerror = null;
+          img.src = PHOTO_FALLBACK_DATA_URL;
+        });
+        thumb.appendChild(img);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = '×';
+        deleteBtn.title = 'Delete photo';
+        deleteBtn.style.cssText = 'position:absolute;top:4px;right:4px;width:24px;height:24px;background:rgba(220,38,38,0.9);border:none;border-radius:50%;color:#fff;font-size:14px;line-height:24px;padding:0;cursor:pointer';
+        deleteBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          deletePhoto(listingId, i);
+        });
+        thumb.appendChild(deleteBtn);
+
+        if (i === 0) {
+          const badge = document.createElement('span');
+          badge.textContent = '★ Primary';
+          badge.style.cssText = 'position:absolute;bottom:4px;left:4px;background:#e94560;color:#fff;font-size:0.55rem;padding:2px 6px;border-radius:4px';
+          thumb.appendChild(badge);
+        } else {
+          const primaryBtn = document.createElement('button');
+          primaryBtn.textContent = '★';
+          primaryBtn.title = 'Set as primary';
+          primaryBtn.style.cssText = 'position:absolute;bottom:4px;right:4px;width:22px;height:22px;background:rgba(0,0,0,0.6);border:none;border-radius:50%;color:#fff;font-size:12px;line-height:22px;padding:0;cursor:pointer';
+          primaryBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            setPrimaryPhoto(listingId, i);
+          });
+          thumb.appendChild(primaryBtn);
+        }
+
+        fragment.appendChild(thumb);
+        renderedPhotos += 1;
+      });
+
+      if (renderedPhotos === 0) {
+        grid.innerHTML = '<p style="color:rgba(255,255,255,0.4);font-size:0.85rem;grid-column:1/-1">No photos yet. Use the uploader below.</p>';
+        return;
+      }
+
+      grid.appendChild(fragment);
     }
 
     function escapeHtml(str) { const d = document.createElement('div'); d.textContent = str||''; return d.innerHTML; }

@@ -66,6 +66,7 @@ const RESET_CODE_RE = /^[0-9]{6}$/;
 const NAME_MAX = 100;
 const TITLE_MAX = 500;
 const DESC_MAX = 10000;
+const PHOTO_URL_MAX = 2048;
 
 function validateEmail(email) {
   if (!email || typeof email !== "string") return "Email is required.";
@@ -248,8 +249,39 @@ function extractMediaObjectKey(rawUrl, bucket = BUCKET) {
 }
 
 function normalizeMediaUrl(req, rawUrl) {
-  const key = extractMediaObjectKey(rawUrl);
-  return key ? buildMediaPublicUrl(req, key) : rawUrl;
+  const storedUrl = normalizeStoredPhotoUrl(rawUrl);
+  if (!storedUrl) return null;
+  const key = extractMediaObjectKey(storedUrl);
+  return key ? buildMediaPublicUrl(req, key) : null;
+}
+
+function normalizeStoredPhotoUrl(rawUrl) {
+  if (typeof rawUrl !== "string") return null;
+  const trimmed = rawUrl.trim();
+  if (!trimmed || trimmed.length > PHOTO_URL_MAX) return null;
+  if (/[\u0000-\u001F\u007F"'<>`\\]/.test(trimmed)) return null;
+  const key = extractMediaObjectKey(trimmed);
+  return key ? buildMediaProxyPath(key) : null;
+}
+
+function sanitizePhotoUrls(rawPhotoUrls) {
+  if (rawPhotoUrls === undefined || rawPhotoUrls === null) {
+    return { photoUrls: [] };
+  }
+  if (!Array.isArray(rawPhotoUrls)) {
+    return { error: "photoUrls must be an array." };
+  }
+
+  const photoUrls = [];
+  for (const rawUrl of rawPhotoUrls) {
+    const normalizedUrl = normalizeStoredPhotoUrl(rawUrl);
+    if (!normalizedUrl) {
+      return { error: "Photo URLs must reference uploaded media files." };
+    }
+    photoUrls.push(normalizedUrl);
+  }
+
+  return { photoUrls };
 }
 
 function normalizeListingResponse(req, listing) {
@@ -257,9 +289,18 @@ function normalizeListingResponse(req, listing) {
 
   return {
     ...listing,
-    photoUrls: Array.isArray(listing.photoUrls) ? listing.photoUrls.map((url) => normalizeMediaUrl(req, url)) : [],
+    photoUrls: Array.isArray(listing.photoUrls)
+      ? listing.photoUrls
+        .map((url) => normalizeMediaUrl(req, url))
+        .filter((url) => typeof url === "string" && url.length > 0)
+      : [],
     media: Array.isArray(listing.media)
-      ? listing.media.map((item) => ({ ...item, url: normalizeMediaUrl(req, item.url) }))
+      ? listing.media
+        .map((item) => {
+          const normalizedUrl = normalizeMediaUrl(req, item.url);
+          return normalizedUrl ? { ...item, url: normalizedUrl } : null;
+        })
+        .filter(Boolean)
       : listing.media,
   };
 }
@@ -780,8 +821,10 @@ const server = http.createServer(async (req, res) => {
         const title = sanitize(body.title, TITLE_MAX);
         const description = sanitize(body.description, DESC_MAX);
         const category = sanitize(body.category, 200);
+        const { photoUrls, error: photoUrlsErr } = sanitizePhotoUrls(body.photoUrls);
 
         if (!title) return jsonResponse(res, 400, { error: "Title is required." });
+        if (photoUrlsErr) return jsonResponse(res, 400, { error: photoUrlsErr });
 
         const ws = await prisma.workspace.findFirst({ where: { members: { some: { userId: uid } } } });
         if (!ws) return jsonResponse(res, 400, { error: "No workspace found. Please register first." });
@@ -791,7 +834,7 @@ const server = http.createServer(async (req, res) => {
             title, description, price: Number(body.price) || 0,
             currency: body.currency || "PLN", category: category || "Other",
             attributes: body.attributes || {}, location: body.location || {},
-            photoUrls: body.photoUrls || [], deliveryOptions: body.deliveryOptions || [],
+            photoUrls, deliveryOptions: body.deliveryOptions || [],
             userId: uid, workspaceId: ws.id,
           },
         });
@@ -815,8 +858,14 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "PUT") {
         const body = await parseBody(req).catch(() => null);
         if (!body) return jsonResponse(res, 400, { error: "Invalid JSON" });
-        if (body.title) body.title = sanitize(body.title, TITLE_MAX);
-        if (body.description) body.description = sanitize(body.description, DESC_MAX);
+        if (body.title !== undefined) body.title = sanitize(body.title, TITLE_MAX);
+        if (body.description !== undefined) body.description = sanitize(body.description, DESC_MAX);
+        if (body.category !== undefined) body.category = sanitize(body.category, 200);
+        if (body.photoUrls !== undefined) {
+          const { photoUrls, error: photoUrlsErr } = sanitizePhotoUrls(body.photoUrls);
+          if (photoUrlsErr) return jsonResponse(res, 400, { error: photoUrlsErr });
+          body.photoUrls = photoUrls;
+        }
         const listing = await prisma.listingDraft.update({ where: { id, userId: uid }, data: body });
         return jsonResponse(res, 200, { listing: normalizeListingResponse(req, listing) });
       }
@@ -843,18 +892,22 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "POST") {
         const body = await parseBody(req).catch(() => null);
         if (!body || !Array.isArray(body.urls)) return jsonResponse(res, 400, { error: "urls array is required." });
+        const { photoUrls, error: photoUrlsErr } = sanitizePhotoUrls(body.urls);
+        if (photoUrlsErr) return jsonResponse(res, 400, { error: photoUrlsErr });
         const current = listing.photoUrls || [];
-        const updated = [...current, ...body.urls];
+        const updated = [...current, ...photoUrls];
         await prisma.listingDraft.update({ where: { id: listingId }, data: { photoUrls: updated } });
-        return jsonResponse(res, 200, { photoUrls: updated.map((url) => normalizeMediaUrl(req, url)) });
+        return jsonResponse(res, 200, { photoUrls: updated.map((url) => normalizeMediaUrl(req, url)).filter(Boolean) });
       }
 
       // PUT /listings/:id/photos — replace entire photoUrls array (reorder)
       if (req.method === "PUT") {
         const body = await parseBody(req).catch(() => null);
         if (!body || !Array.isArray(body.urls)) return jsonResponse(res, 400, { error: "urls array is required." });
-        await prisma.listingDraft.update({ where: { id: listingId }, data: { photoUrls: body.urls } });
-        return jsonResponse(res, 200, { photoUrls: body.urls.map((url) => normalizeMediaUrl(req, url)) });
+        const { photoUrls, error: photoUrlsErr } = sanitizePhotoUrls(body.urls);
+        if (photoUrlsErr) return jsonResponse(res, 400, { error: photoUrlsErr });
+        await prisma.listingDraft.update({ where: { id: listingId }, data: { photoUrls } });
+        return jsonResponse(res, 200, { photoUrls: photoUrls.map((url) => normalizeMediaUrl(req, url)).filter(Boolean) });
       }
 
       // DELETE /listings/:id/photos/:index — remove a single photo by index
@@ -863,7 +916,7 @@ const server = http.createServer(async (req, res) => {
         if (photoIndex < 0 || photoIndex >= current.length) return jsonResponse(res, 400, { error: "Invalid photo index." });
         const updated = current.filter((_, i) => i !== photoIndex);
         await prisma.listingDraft.update({ where: { id: listingId }, data: { photoUrls: updated } });
-        return jsonResponse(res, 200, { photoUrls: updated.map((url) => normalizeMediaUrl(req, url)) });
+        return jsonResponse(res, 200, { photoUrls: updated.map((url) => normalizeMediaUrl(req, url)).filter(Boolean) });
       }
     }
 

@@ -35,6 +35,7 @@ A fully working application is running: user registration/login with JWT Bearer 
 
 ## Recent Changes
 
+- 2026-07-09: Closed the stored-XSS path in listing photos by validating `photoUrls` against uploaded media paths in the API, filtering legacy invalid values out of listing responses, and rendering dashboard/detail/photo thumbnails plus fullscreen previews through DOM APIs instead of URL interpolation / `document.write`.
 - 2026-07-09: Hardened `POST /publication-jobs` so the submitted `listingId` must belong to the authenticated user before creating `ExternalListing` / `PublicationJob` rows or enqueueing publish work.
 - 2026-07-09: Fixed duplicate-publication `P2002` errors by reusing the unique `(listingDraftId, marketplaceProviderId)` `ExternalListing` row during `POST /publication-jobs` and creating a new `PublicationJob` inside the same transaction.
 - 2026-07-09: Hardened object-by-ID reads so `GET /listings/:id` and `GET /publication-jobs/:id` now require authentication plus owner matching, closing an ID-enumeration data leak in the active Node.js runtime.
