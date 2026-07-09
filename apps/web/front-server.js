@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 const API_PROXY_URL = process.env.API_PROXY_URL || `http://localhost:${process.env.API_PORT || 3001}`;
+const MEDIA_PROXY_URL = process.env.MINIO_PROXY_URL || `http://localhost:${process.env.MINIO_API_PORT || 9000}`;
 const API_ROUTE_PREFIXES = [
   "/auth",
   "/listings",
@@ -13,9 +14,14 @@ const API_ROUTE_PREFIXES = [
   "/media",
   "/health",
 ];
+const MEDIA_ROUTE_PREFIX = "/media-files";
 
 function isApiRoute(pathname) {
   return API_ROUTE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+function isMediaRoute(pathname) {
+  return pathname === MEDIA_ROUTE_PREFIX || pathname.startsWith(`${MEDIA_ROUTE_PREFIX}/`);
 }
 
 function proxyToApi(req, res, url) {
@@ -42,9 +48,38 @@ function proxyToApi(req, res, url) {
   req.pipe(proxyReq);
 }
 
+function proxyToMedia(req, res, url) {
+  const mediaPath = url.pathname.replace(MEDIA_ROUTE_PREFIX, "") || "/";
+  const target = new URL(`${mediaPath}${url.search}`, MEDIA_PROXY_URL);
+  const client = target.protocol === "https:" ? https : http;
+
+  const proxyReq = client.request(target, {
+    method: req.method,
+    headers: {
+      ...req.headers,
+      host: target.host,
+    },
+  }, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on("error", (error) => {
+    res.writeHead(502, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ error: "Media proxy request failed", detail: error.message }));
+  });
+
+  req.pipe(proxyReq);
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let filePath = url.pathname;
+
+  if (isMediaRoute(url.pathname)) {
+    proxyToMedia(req, res, url);
+    return;
+  }
 
   if (isApiRoute(url.pathname)) {
     proxyToApi(req, res, url);

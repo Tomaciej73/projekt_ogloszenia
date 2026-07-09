@@ -49,7 +49,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `public/dashboard.html` - publication dashboard: list listings, select provider, publish
 - [x] `public/register.html` - standalone registration page with strong password rules and activation-required messaging
 - [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint and DB-synced remaining login-attempt messaging
-- [x] `front-server.js` - static file server plus same-origin API proxy for VPS/Nginx deployment
+- [x] `front-server.js` - static file server plus same-origin API and MinIO media proxy for VPS/Nginx deployment
 - [x] Dashboard after login with listing list and stats
 - [x] Session persistence via localStorage (survives refresh/new tab)
 
@@ -65,6 +65,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] SMTP debug transport logging disabled to avoid leaking reset codes or mail transport details in container logs
 - [x] Mail config warnings for placeholder/misaligned SMTP sender settings
 - [x] Runtime SMTP config supports explicit `SMTP_FROM_NAME`, `SMTP_REPLY_TO`, `SMTP_SENDER`, and optional public URL envs for domain-based auth links
+- [x] Listing media URLs now stay on the web origin, so thumbnails no longer depend on direct `localhost:9000` or MinIO host exposure
 - [x] No hardcoded passwords, tokens, or secrets in source code
 - [x] `.env` git-ignored, `.env.example` has placeholders only
 
@@ -118,5 +119,6 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-09 | Nodemailer debug logging disabled in runtime | Prevents reset codes and SMTP details from appearing in `docker logs` |
 | 2026-07-09 | New accounts stay inactive until email activation or forgot-password activation | Keeps registration explicit and gives an owner-approved recovery path for expired activation links |
 | 2026-07-09 | API container runs `prisma migrate deploy` during startup | Prevents registration/login/auth regressions after deploys when PostgreSQL still has the previous schema |
+| 2026-07-09 | Listing photos now use same-origin `/media-files/...` URLs with legacy URL normalization | Fixes broken thumbnails when old records or runtime config still pointed at direct MinIO or localhost hosts |
 | 2026-07-09 | SMTP startup verify and accepted/rejected logging added | Makes VPS mail troubleshooting clearer and fails faster when the relay is unreachable or slow |
 | 2026-07-09 | Mailer now supports implicit TLS on port 465 via `SMTP_SECURE` | Allows switching from STARTTLS relays to SSL/TLS SMTP hosts without code changes |

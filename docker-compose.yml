@@ -124,6 +124,7 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV}
       API_PROXY_URL: http://api:3001
+      MINIO_PROXY_URL: http://minio:9000
       API_PORT: ${API_PORT}
     depends_on:
       - api

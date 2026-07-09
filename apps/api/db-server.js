@@ -25,6 +25,7 @@ const RESET_EXPIRY_MS = 3600000;
 const ACTIVATION_EXPIRY_MS = 3600000;
 const MAX_LOGIN_ATTEMPTS = 5;
 const MAX_RESET_ATTEMPTS = 5;
+const MEDIA_PROXY_PREFIX = "/media-files";
 const INACTIVE_LOGIN_MESSAGE = "Your account is not active yet. Check your email for the activation link or use Forgot password to activate your account.";
 const INACTIVE_REGISTER_MESSAGE = "An account with this email already exists but is not active. Use Forgot password to activate your account and set a new password.";
 const LOCKED_LOGIN_MESSAGE = "Your account is locked after 5 failed login attempts. Use Forgot password to unlock your account and set a new password.";
@@ -169,9 +170,98 @@ function getWebBaseUrl(req) {
   return `${protocol}://${hostname}:${process.env.WEB_PORT || 3000}`;
 }
 
+function getMediaBaseUrl(req) {
+  const forwardedHost = req.headers["x-forwarded-host"];
+  if (forwardedHost) {
+    const protocol = req.headers["x-forwarded-proto"] || "http";
+    return `${protocol}://${forwardedHost}`;
+  }
+  return getWebBaseUrl(req);
+}
+
 function buildActivationUrl(req, email, token) {
   const baseUrl = getApiBaseUrl(req);
   return `${baseUrl}/auth/activate?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`;
+}
+
+function safeDecodePathSegment(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function encodePathSegments(value) {
+  return String(value || "")
+    .split("/")
+    .filter((segment) => segment.length > 0)
+    .map((segment) => encodeURIComponent(safeDecodePathSegment(segment)))
+    .join("/");
+}
+
+function decodePathSegments(value) {
+  return String(value || "")
+    .split("/")
+    .filter((segment) => segment.length > 0)
+    .map((segment) => safeDecodePathSegment(segment))
+    .join("/");
+}
+
+function buildMediaProxyPath(key, bucket = BUCKET) {
+  return `${MEDIA_PROXY_PREFIX}/${encodeURIComponent(bucket)}/${encodePathSegments(key)}`;
+}
+
+function buildMediaPublicUrl(req, key, bucket = BUCKET) {
+  return `${getMediaBaseUrl(req)}${buildMediaProxyPath(key, bucket)}`;
+}
+
+function extractMediaObjectKey(rawUrl, bucket = BUCKET) {
+  if (typeof rawUrl !== "string") return null;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+
+  const bucketPrefix = `/${bucket}/`;
+  const proxyPrefix = `${MEDIA_PROXY_PREFIX}/${bucket}/`;
+
+  if (trimmed.startsWith(proxyPrefix)) {
+    return decodePathSegments(trimmed.slice(proxyPrefix.length));
+  }
+
+  if (trimmed.startsWith(`${bucket}/`)) {
+    return decodePathSegments(trimmed.slice(bucket.length + 1));
+  }
+
+  try {
+    const parsed = new URL(trimmed, "http://placeholder.local");
+    if (parsed.pathname.startsWith(proxyPrefix)) {
+      return decodePathSegments(parsed.pathname.slice(proxyPrefix.length));
+    }
+    if (parsed.pathname.startsWith(bucketPrefix)) {
+      return decodePathSegments(parsed.pathname.slice(bucketPrefix.length));
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function normalizeMediaUrl(req, rawUrl) {
+  const key = extractMediaObjectKey(rawUrl);
+  return key ? buildMediaPublicUrl(req, key) : rawUrl;
+}
+
+function normalizeListingResponse(req, listing) {
+  if (!listing) return listing;
+
+  return {
+    ...listing,
+    photoUrls: Array.isArray(listing.photoUrls) ? listing.photoUrls.map((url) => normalizeMediaUrl(req, url)) : [],
+    media: Array.isArray(listing.media)
+      ? listing.media.map((item) => ({ ...item, url: normalizeMediaUrl(req, item.url) }))
+      : listing.media,
+  };
 }
 
 function getRemainingLoginAttempts(failedLoginAttempts) {
@@ -681,7 +771,7 @@ const server = http.createServer(async (req, res) => {
           orderBy: { createdAt: "desc" },
           include: { media: true },
         });
-        return jsonResponse(res, 200, { listings });
+        return jsonResponse(res, 200, { listings: listings.map((listing) => normalizeListingResponse(req, listing)) });
       }
       if (req.method === "POST") {
         const body = await parseBody(req).catch(() => null);
@@ -705,7 +795,7 @@ const server = http.createServer(async (req, res) => {
             userId: uid, workspaceId: ws.id,
           },
         });
-        return jsonResponse(res, 201, { listing });
+        return jsonResponse(res, 201, { listing: normalizeListingResponse(req, listing) });
       }
     }
 
@@ -716,7 +806,9 @@ const server = http.createServer(async (req, res) => {
       const uid = getUserId(req);
       if (req.method === "GET") {
         const listing = await prisma.listingDraft.findUnique({ where: { id } });
-        return listing ? jsonResponse(res, 200, { listing }) : jsonResponse(res, 404, { error: "Listing not found" });
+        return listing
+          ? jsonResponse(res, 200, { listing: normalizeListingResponse(req, listing) })
+          : jsonResponse(res, 404, { error: "Listing not found" });
       }
       if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
       if (req.method === "PUT") {
@@ -725,7 +817,7 @@ const server = http.createServer(async (req, res) => {
         if (body.title) body.title = sanitize(body.title, TITLE_MAX);
         if (body.description) body.description = sanitize(body.description, DESC_MAX);
         const listing = await prisma.listingDraft.update({ where: { id, userId: uid }, data: body });
-        return jsonResponse(res, 200, { listing });
+        return jsonResponse(res, 200, { listing: normalizeListingResponse(req, listing) });
       }
       if (req.method === "DELETE") {
         // Delete related media first to avoid RESTRICT foreign key violation
@@ -753,7 +845,7 @@ const server = http.createServer(async (req, res) => {
         const current = listing.photoUrls || [];
         const updated = [...current, ...body.urls];
         await prisma.listingDraft.update({ where: { id: listingId }, data: { photoUrls: updated } });
-        return jsonResponse(res, 200, { photoUrls: updated });
+        return jsonResponse(res, 200, { photoUrls: updated.map((url) => normalizeMediaUrl(req, url)) });
       }
 
       // PUT /listings/:id/photos — replace entire photoUrls array (reorder)
@@ -761,7 +853,7 @@ const server = http.createServer(async (req, res) => {
         const body = await parseBody(req).catch(() => null);
         if (!body || !Array.isArray(body.urls)) return jsonResponse(res, 400, { error: "urls array is required." });
         await prisma.listingDraft.update({ where: { id: listingId }, data: { photoUrls: body.urls } });
-        return jsonResponse(res, 200, { photoUrls: body.urls });
+        return jsonResponse(res, 200, { photoUrls: body.urls.map((url) => normalizeMediaUrl(req, url)) });
       }
 
       // DELETE /listings/:id/photos/:index — remove a single photo by index
@@ -770,7 +862,7 @@ const server = http.createServer(async (req, res) => {
         if (photoIndex < 0 || photoIndex >= current.length) return jsonResponse(res, 400, { error: "Invalid photo index." });
         const updated = current.filter((_, i) => i !== photoIndex);
         await prisma.listingDraft.update({ where: { id: listingId }, data: { photoUrls: updated } });
-        return jsonResponse(res, 200, { photoUrls: updated });
+        return jsonResponse(res, 200, { photoUrls: updated.map((url) => normalizeMediaUrl(req, url)) });
       }
     }
 
@@ -821,6 +913,7 @@ const server = http.createServer(async (req, res) => {
 
       const key = `uploads/${uid}/${Date.now()}-${sanitize(body.fileName, 200)}`;
       const { uploadUrl, publicUrl } = await getPresignedUploadUrl(key, body.contentType);
+      const proxyPublicUrl = buildMediaPublicUrl(req, key);
 
       // Only record media if listingId is provided and belongs to the user
       if (body.listingId) {
@@ -828,7 +921,7 @@ const server = http.createServer(async (req, res) => {
         if (listing) {
           await prisma.listingMedia.create({
             data: {
-              url: publicUrl,
+              url: proxyPublicUrl,
               key,
               fileName: sanitize(body.fileName, 200),
               fileSize: body.fileSize || 0,
@@ -839,7 +932,7 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      return jsonResponse(res, 201, { uploadUrl, publicUrl, key });
+      return jsonResponse(res, 201, { uploadUrl, publicUrl: proxyPublicUrl, key, directPublicUrl: publicUrl });
     }
 
     // ── Media Upload (direct server-side, base64) ──
@@ -855,12 +948,10 @@ const server = http.createServer(async (req, res) => {
       const buf = Buffer.from(body.data, "base64");
       const contentType = body.contentType || "application/octet-stream";
       const key = `uploads/${uid}/${Date.now()}-${sanitize(body.fileName, 200)}`;
+      const proxyPublicUrl = buildMediaPublicUrl(req, key);
 
       await ensureBucket();
       await minioClient.putObject(BUCKET, key, buf, buf.length, { "Content-Type": contentType });
-
-      const publicEndpoint = process.env.S3_PUBLIC_ENDPOINT || process.env.S3_ENDPOINT || "http://localhost:9000";
-      const publicUrl = `${publicEndpoint}/${BUCKET}/${key}`;
 
       // Record media if listingId is provided
       if (body.listingId) {
@@ -868,7 +959,7 @@ const server = http.createServer(async (req, res) => {
         if (listing) {
           await prisma.listingMedia.create({
             data: {
-              url: publicUrl,
+              url: proxyPublicUrl,
               key,
               fileName: sanitize(body.fileName, 200),
               fileSize: body.fileSize || buf.length,
@@ -879,7 +970,7 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      return jsonResponse(res, 201, { publicUrl, key });
+      return jsonResponse(res, 201, { publicUrl: proxyPublicUrl, key });
     }
 
     // ── Providers ──

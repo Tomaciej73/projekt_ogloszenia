@@ -93,6 +93,7 @@ Checked 2026-07-07 via official/npm/Docker sources.
 - API runtime on host port `3001`
 - Web runtime on host port `3000`
 - Browser clients now call the web origin only; `apps/web/front-server.js` proxies selected API routes to the API runtime target.
+- Browser-rendered listing photos also stay on the web origin; `apps/web/front-server.js` proxies `/media-files/...` to MinIO so thumbnails do not depend on exposing direct MinIO hostnames.
 
 ## Environment Variables
 
@@ -101,6 +102,7 @@ Key `.env` groups:
 - **Database:** `DATABASE_URL`
 - **Redis:** `REDIS_URL`
 - **Storage:** `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
+- **Web media proxy:** optional `MINIO_PROXY_URL`
 - **Auth:** `JWT_SECRET`, `SESSION_SECRET`, `CSRF_SECRET`
 - **SMTP:** `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`
 - **SMTP transport mode:** optional `SMTP_SECURE` plus optional `SMTP_REQUIRE_TLS`
@@ -165,6 +167,7 @@ packages/config/
 - Mailer now also verifies the SMTP transport at startup and logs the relay response plus `accepted` / `rejected` recipients after each send.
 - Mail transport automatically uses implicit SSL/TLS when `SMTP_SECURE=true` or `SMTP_PORT=465`; otherwise it defaults to STARTTLS with `SMTP_REQUIRE_TLS=true`.
 - API runtime can honor optional `API_PUBLIC_URL` and `WEB_PUBLIC_URL` environment variables to avoid generating auth links with `localhost` when the app is exposed behind a public domain.
+- Listing photo responses normalize legacy direct-MinIO URLs and now prefer web-origin `/media-files/...` links, so older rows that still store `http://localhost:9000/...` continue working in the UI.
 - SMTP relay acceptance alone is not enough for Gmail/Onet inbox delivery; verified sender mailbox plus aligned SPF/DKIM/DMARC remain required.
 - Verbose nodemailer transport logging is disabled in runtime to avoid leaking reset codes or SMTP session details into container logs.
 - Strong password rules are enforced on registration and password reset:
