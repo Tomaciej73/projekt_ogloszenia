@@ -2,8 +2,8 @@ const nodemailer = require("nodemailer");
 
 // SMTP transport — all config from environment variables
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "localhost",
-  port: parseInt(process.env.SMTP_PORT || "587", 10),
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT, 10),
   secure: false,
   requireTLS: true,
   auth: {
