@@ -73,3 +73,4 @@ MultiPortal Listing Manager provides a single interface to create a listing draf
 - Errors should be actionable with clear next steps
 - No silent failures — every publication attempt must produce a visible outcome
 - Provider-specific limitations (max photos, max description length) should be enforced in the form
+- Authentication flows should explain password strength requirements up front and require a registered email plus one-time reset code for password recovery

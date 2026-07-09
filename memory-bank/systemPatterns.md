@@ -151,3 +151,10 @@ apps/api/src/
 - HTTP errors: mapped from domain/provider errors in exception filters
 - Workers: failed jobs go to retry with exponential backoff, then dead letter queue
 - All errors logged to audit log when affecting external listings
+
+### 10. Password Reset Code Flow
+- `POST /auth/forgot-password` validates email format and checks that the account exists before trying to send mail.
+- The API generates a 6-digit one-time code, stores it in an in-memory map keyed by normalized email, and sets a 1-hour expiry.
+- SMTP delivery must succeed; if the mail server rejects the recipient or sending fails, the pending reset code is discarded and the request returns an error.
+- `POST /auth/reset-password` validates email, reset code, expiry, and strong password rules before updating the stored password hash.
+- Reset codes are single-use and removed after a successful password reset or when an expired code is detected.

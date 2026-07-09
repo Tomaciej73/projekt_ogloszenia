@@ -47,6 +47,7 @@ function parseBody(req) {
 const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 const SAFE_STRING_RE = /^[\p{L}\p{N}\p{Z}\p{P}]+$/u; // letters, numbers, spaces, punctuation
 const PASSWORD_MIN = 8;
+const RESET_CODE_RE = /^[0-9]{6}$/;
 const NAME_MAX = 100;
 const TITLE_MAX = 500;
 const DESC_MAX = 10000;
@@ -62,6 +63,21 @@ function validatePassword(password) {
   if (!password || typeof password !== "string") return "Password is required.";
   if (password.length < PASSWORD_MIN) return `Password must be at least ${PASSWORD_MIN} characters.`;
   if (password.length > 128) return "Password is too long (max 128 characters).";
+  if (!/[a-z]/.test(password)) return "Password must contain at least one lowercase letter.";
+  if (!/[A-Z]/.test(password)) return "Password must contain at least one uppercase letter.";
+  if (!/[0-9]/.test(password)) return "Password must contain at least one number.";
+  if (!/[^a-zA-Z0-9]/.test(password)) return "Password must contain at least one special character (e.g. !@#$%^&*).";
+  return null;
+}
+
+function normalizeResetCode(code) {
+  if (code === undefined || code === null) return "";
+  return String(code).replace(/\s+/g, "").trim();
+}
+
+function validateResetCode(code) {
+  if (!code) return "Reset code is required.";
+  if (!RESET_CODE_RE.test(code)) return "Reset code must contain exactly 6 digits.";
   return null;
 }
 
@@ -91,7 +107,16 @@ function verifyPassword(pw, stored) {
   return hash === crypto.pbkdf2Sync(pw, salt, 100000, 64, "sha512").toString("hex");
 }
 
-const resetTokens = new Map(); // email → { token, expires }
+const resetTokens = new Map();
+
+function generateResetCode() {
+  return crypto.randomInt(100000, 1000000).toString();
+}
+
+function isMatchingResetCode(expected, actual) {
+  if (typeof expected !== "string" || typeof actual !== "string" || expected.length !== actual.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
+}
 
 function signToken(userId) {
   return jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
@@ -194,20 +219,26 @@ const server = http.createServer(async (req, res) => {
       if (emailErr) return jsonResponse(res, 400, { error: emailErr });
 
       const user = await prisma.user.findUnique({ where: { email } });
-      if (!user) return jsonResponse(res, 200, { message: "If this email is registered, a reset link has been sent." });
+      if (!user) return jsonResponse(res, 404, { error: "No account found for this email address." });
 
-      const rToken = crypto.randomBytes(32).toString("hex");
-      resetTokens.set(email, { token: rToken, expires: Date.now() + 3600000 }); // 1 hour
+      const resetCode = generateResetCode();
+      resetTokens.set(email, { token: resetCode, expires: Date.now() + 3600000 }); // 1 hour
 
       // Send password reset email via SMTP
       try {
-        await sendPasswordResetEmail(email, rToken, user.name);
+        const mailInfo = await sendPasswordResetEmail(email, resetCode, user.name);
+        if (Array.isArray(mailInfo.rejected) && mailInfo.rejected.length > 0) {
+          resetTokens.delete(email);
+          return jsonResponse(res, 502, { error: "Reset email was rejected by the mail server. Please verify the address and try again." });
+        }
         console.log(`Password reset email sent to ${email}`);
       } catch (mailErr) {
+        resetTokens.delete(email);
         console.error("Failed to send reset email:", mailErr.message);
+        return jsonResponse(res, 502, { error: "Failed to send reset email. Please try again later." });
       }
 
-      return jsonResponse(res, 200, { message: "If this email is registered, a reset link has been sent." });
+      return jsonResponse(res, 200, { message: "Reset code sent. Check your email for the 6-digit code." });
     }
 
     // ── Auth: Reset Password ──
@@ -216,12 +247,30 @@ const server = http.createServer(async (req, res) => {
       if (!body) return jsonResponse(res, 400, { error: "Invalid JSON" });
 
       const email = sanitize(body.email, 254).toLowerCase();
+      const emailErr = validateEmail(email);
+      const resetCode = normalizeResetCode(body.code ?? body.token);
+      const resetCodeErr = validateResetCode(resetCode);
       const pwdErr = validatePassword(body.password);
+      if (emailErr) return jsonResponse(res, 400, { error: emailErr });
+      if (resetCodeErr) return jsonResponse(res, 400, { error: resetCodeErr });
       if (pwdErr) return jsonResponse(res, 400, { error: pwdErr });
 
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true },
+      });
+      if (!user) return jsonResponse(res, 404, { error: "No account found for this email address." });
+
       const entry = resetTokens.get(email);
-      if (!entry || entry.token !== body.token || Date.now() > entry.expires) {
-        return jsonResponse(res, 400, { error: "Invalid or expired reset token." });
+      if (!entry) {
+        return jsonResponse(res, 400, { error: "Reset code not found. Request a new code and try again." });
+      }
+      if (Date.now() > entry.expires) {
+        resetTokens.delete(email);
+        return jsonResponse(res, 400, { error: "Reset code has expired. Request a new code and try again." });
+      }
+      if (!isMatchingResetCode(entry.token, resetCode)) {
+        return jsonResponse(res, 400, { error: "Invalid reset code." });
       }
 
       await prisma.user.update({

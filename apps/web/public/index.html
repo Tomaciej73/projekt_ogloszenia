@@ -95,9 +95,10 @@
               <button type="button" onclick="handleForgotPassword()" id="forgotBtn">Send Reset Code</button>
               <div id="resetCodeSection" style="display:none;margin-top:1rem">
                 <label>Reset Code (from your email)</label>
-                <input type="text" id="resetToken" required placeholder="Paste the reset token">
+                <input type="text" id="resetCode" required inputmode="numeric" maxlength="6" pattern="[0-9]{6}" title="Enter the 6-digit code from your email." placeholder="Enter the 6-digit reset code">
                 <label>New Password</label>
-                <input type="password" id="resetPassword" required minlength="8" placeholder="New password (min 8 chars)">
+                <input type="password" id="resetPassword" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,128}" title="Use at least 8 characters with uppercase, lowercase, number, and special character." placeholder="New password (min 8 chars)" autocomplete="new-password">
+                <p style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin:-0.5rem 0 1rem">Use at least 8 characters with uppercase, lowercase, number, and special character.</p>
                 <button type="button" onclick="handleResetPassword()" id="resetPwdBtn">Reset Password</button>
               </div>
             </div>
@@ -109,7 +110,8 @@
               <label>Email</label>
               <input type="email" id="regEmail" required placeholder="you@example.com" autocomplete="email">
               <label>Password</label>
-              <input type="password" id="regPassword" required minlength="8" placeholder="Min. 8 characters" autocomplete="new-password">
+              <input type="password" id="regPassword" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,128}" title="Use at least 8 characters with uppercase, lowercase, number, and special character." placeholder="Min. 8 characters, uppercase, lowercase, number, special character" autocomplete="new-password">
+              <p style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin:-0.5rem 0 1rem">Use at least 8 characters with uppercase, lowercase, number, and special character.</p>
               <button type="submit" id="regBtn">Create Account</button>
             </form>
           </div>
@@ -168,6 +170,7 @@
 
   <script>
     const API = 'http://localhost:3001';
+    const PASSWORD_RULES = 'Use at least 8 characters with uppercase, lowercase, number, and special character.';
 
     // ── TOAST ──
     function toast(msg, type) {
@@ -177,6 +180,19 @@
       t.textContent = msg;
       c.appendChild(t);
       setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; setTimeout(() => t.remove(), 300); }, 4000);
+    }
+
+    function validatePasswordStrength(password) {
+      if (!password || password.length < 8) return 'Password must be at least 8 characters.';
+      if (!/[a-z]/.test(password)) return 'Password must contain at least one lowercase letter.';
+      if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter.';
+      if (!/[0-9]/.test(password)) return 'Password must contain at least one number.';
+      if (!/[^A-Za-z0-9]/.test(password)) return 'Password must contain at least one special character.';
+      return null;
+    }
+
+    function normalizeResetCode(value) {
+      return String(value || '').replace(/\s+/g, '').trim();
     }
 
     function switchTab(name) {
@@ -209,11 +225,17 @@
     async function handleRegister(e) {
       e.preventDefault();
       const btn = document.getElementById('regBtn');
+      const password = document.getElementById('regPassword').value;
+      const passwordError = validatePasswordStrength(password);
+      if (passwordError) {
+        toast(passwordError + ' ' + PASSWORD_RULES, 'error');
+        return;
+      }
       btn.disabled = true; btn.textContent = 'Creating...';
       try {
         const res = await fetch(API + '/auth/register', {
           method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ name: document.getElementById('regName').value, email: document.getElementById('regEmail').value, password: document.getElementById('regPassword').value }),
+          body: JSON.stringify({ name: document.getElementById('regName').value, email: document.getElementById('regEmail').value, password }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Registration failed');
@@ -568,6 +590,7 @@
           body: JSON.stringify({ email: document.getElementById('forgotEmail').value }),
         });
         const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to send reset code');
         document.getElementById('resetCodeSection').style.display = 'block';
         toast(data.message || 'Reset code sent. Check your email.', 'success');
       } catch(e) { toast(e.message, 'error'); }
@@ -576,17 +599,31 @@
 
     async function handleResetPassword() {
       const btn = document.getElementById('resetPwdBtn');
+      const resetCode = normalizeResetCode(document.getElementById('resetCode').value);
+      const password = document.getElementById('resetPassword').value;
+      const passwordError = validatePasswordStrength(password);
+      if (!/^[0-9]{6}$/.test(resetCode)) {
+        toast('Enter the 6-digit reset code from your email.', 'error');
+        return;
+      }
+      if (passwordError) {
+        toast(passwordError + ' ' + PASSWORD_RULES, 'error');
+        return;
+      }
       btn.disabled = true; btn.textContent = 'Resetting...';
       try {
         const res = await fetch(API + '/auth/reset-password', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: document.getElementById('forgotEmail').value, token: document.getElementById('resetToken').value, password: document.getElementById('resetPassword').value }),
+          body: JSON.stringify({ email: document.getElementById('forgotEmail').value, code: resetCode, password }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Reset failed');
         toast(data.message, 'success');
         document.getElementById('forgotPasswordForm').style.display = 'none';
         document.getElementById('resetCodeSection').style.display = 'none';
+        document.getElementById('forgotEmail').value = '';
+        document.getElementById('resetCode').value = '';
+        document.getElementById('resetPassword').value = '';
       } catch(e) { toast(e.message, 'error'); }
       finally { btn.disabled = false; btn.textContent = 'Reset Password'; }
     }

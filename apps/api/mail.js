@@ -14,8 +14,6 @@ const transporter = nodemailer.createTransport({
     // Shared hosting may use a different domain on the certificate
     rejectUnauthorized: false,
   },
-  debug: true,
-  logger: true,
 });
 
 const FROM = process.env.SMTP_FROM || "notifications@multiportal.com";
@@ -23,10 +21,10 @@ const FROM = process.env.SMTP_FROM || "notifications@multiportal.com";
 /**
  * Send a password reset email with a styled HTML template.
  * @param {string} to — recipient email
- * @param {string} resetToken — the reset token
+ * @param {string} resetCode — the reset code
  * @param {string} userName — optional user name for personalization
  */
-async function sendPasswordResetEmail(to, resetToken, userName) {
+async function sendPasswordResetEmail(to, resetCode, userName) {
   const firstName = userName ? userName.split(" ")[0] : "there";
   const subject = "Password Reset — MultiPortal Listing Manager";
 
@@ -62,7 +60,7 @@ async function sendPasswordResetEmail(to, resetToken, userName) {
               <!-- Reset Code Box -->
               <div style="margin:1.5rem 0;padding:1.25rem;background:rgba(233,69,96,0.1);border:1px solid rgba(233,69,96,0.3);border-radius:12px;text-align:center">
                 <p style="margin:0 0 0.5rem;font-size:0.75rem;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px">Your Reset Code</p>
-                <p style="margin:0;font-size:1.5rem;font-weight:700;color:#e94560;font-family:monospace;letter-spacing:2px;word-break:break-all">${resetToken}</p>
+                <p style="margin:0;font-size:1.5rem;font-weight:700;color:#e94560;font-family:monospace;letter-spacing:6px">${resetCode}</p>
               </div>
               <p style="margin:0 0 1rem;color:rgba(255,255,255,0.75);line-height:1.6;font-size:0.95rem">
                 Paste this code into the reset form to continue. This code will expire in <strong style="color:#f39c12">1 hour</strong>.
@@ -91,9 +89,9 @@ async function sendPasswordResetEmail(to, resetToken, userName) {
 </body>
 </html>`;
 
-  const text = `MultiPortal Listing Manager — Password Reset\n\nHi ${firstName},\n\nWe received a request to reset your password. Use the reset code below:\n\n${resetToken}\n\nThis code will expire in 1 hour.\n\nIf you did not request a password reset, you can safely ignore this email.\n\nMultiPortal Listing Manager`;
+  const text = `MultiPortal Listing Manager — Password Reset\n\nHi ${firstName},\n\nWe received a request to reset your password. Use the reset code below:\n\n${resetCode}\n\nThis code will expire in 1 hour.\n\nIf you did not request a password reset, you can safely ignore this email.\n\nMultiPortal Listing Manager`;
 
-  await transporter.sendMail({
+  return transporter.sendMail({
     from: `MultiPortal <${FROM}>`,
     to,
     subject,
