@@ -1,5 +1,8 @@
 const nodemailer = require("nodemailer");
 
+const DEFAULT_SMTP_FROM = "noreply@manager.multiportal.site";
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT, 10),
@@ -14,7 +17,43 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const FROM = process.env.SMTP_FROM || "notifications@multiportal.com";
+function normalizeEmail(value) {
+  const trimmed = String(value || "").trim();
+  return EMAIL_RE.test(trimmed) ? trimmed : "";
+}
+
+function getEmailDomain(email) {
+  return normalizeEmail(email).split("@")[1] || "";
+}
+
+const SMTP_USER = String(process.env.SMTP_USER || "").trim();
+const EXPLICIT_FROM = normalizeEmail(process.env.SMTP_FROM);
+const FROM = EXPLICIT_FROM || DEFAULT_SMTP_FROM;
+const FROM_NAME = String(process.env.SMTP_FROM_NAME || "MultiPortal").trim() || "MultiPortal";
+const REPLY_TO = normalizeEmail(process.env.SMTP_REPLY_TO) || FROM;
+const SENDER = normalizeEmail(process.env.SMTP_SENDER);
+
+if (!EXPLICIT_FROM) {
+  console.warn(
+    'Mail config warning: SMTP_FROM is not set, so the default sender "noreply@manager.multiportal.site" will be used. Make sure this mailbox really exists on your SMTP relay and has aligned SPF/DKIM/DMARC for inbox delivery.',
+  );
+}
+
+if (!EXPLICIT_FROM) {
+  console.warn("Mail config warning: SMTP_FROM is missing or invalid. Using the default placeholder sender address.");
+}
+
+if (!EMAIL_RE.test(SMTP_USER) && !SENDER) {
+  console.warn(
+    "Mail config warning: SMTP_USER does not look like an email address and SMTP_SENDER is not set. Make sure SMTP_FROM belongs to a mailbox/domain authorized on this SMTP relay.",
+  );
+}
+
+if (EMAIL_RE.test(SMTP_USER) && getEmailDomain(SMTP_USER) !== getEmailDomain(FROM)) {
+  console.warn(
+    `Mail config warning: SMTP_FROM domain (${getEmailDomain(FROM)}) differs from SMTP_USER domain (${getEmailDomain(SMTP_USER)}). If SPF/DKIM/DMARC are not aligned, mailbox providers may junk or reject messages.`,
+  );
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -77,11 +116,16 @@ function buildEmailHtml({ subject, headline, firstName, intro, contentHtml, foot
 
 function sendMail({ to, subject, html, text }) {
   return transporter.sendMail({
-    from: `MultiPortal <${FROM}>`,
+    from: `${FROM_NAME} <${FROM}>`,
+    ...(REPLY_TO ? { replyTo: REPLY_TO } : {}),
+    ...(SENDER ? { sender: SENDER } : {}),
     to,
     subject,
     html,
     text,
+    headers: {
+      "X-Auto-Response-Suppress": "All",
+    },
   });
 }
 

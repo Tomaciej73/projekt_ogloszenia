@@ -158,6 +158,9 @@ packages/config/
 - Reset codes are stored in PostgreSQL as SHA-256 hashes scoped to the user ID, with expiry, request timestamp, and invalid-attempt counter.
 - Login responses can return DB-backed `remainingLoginAttempts` and `accountLocked` flags so the frontend stays synchronized with the actual lock state.
 - Inactive accounts can also be activated through the forgot-password reset flow after mailbox verification.
+- Mailer warns at startup when `SMTP_FROM` is missing, still uses the `noreply@manager.multiportal.site` default sender, or otherwise looks misaligned with the SMTP relay setup.
+- API runtime can honor optional `API_PUBLIC_URL` and `WEB_PUBLIC_URL` environment variables to avoid generating auth links with `localhost` when the app is exposed behind a public domain.
+- SMTP relay acceptance alone is not enough for Gmail/Onet inbox delivery; verified sender mailbox plus aligned SPF/DKIM/DMARC remain required.
 - Verbose nodemailer transport logging is disabled in runtime to avoid leaking reset codes or SMTP session details into container logs.
 - Strong password rules are enforced on registration and password reset:
   - minimum 8 characters

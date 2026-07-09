@@ -14,7 +14,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Prisma v7 schema with 12 entities and 4 enums
 - [x] 5 Prisma migrations applied
 - [x] `.env` - all configuration via dotenv, no hardcoded credentials
-- [x] `.env.example` - placeholder values only, no real secrets
+- [x] `.env.example` - placeholder values only, no real secrets, including SMTP sender placeholders
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
@@ -59,6 +59,8 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Account lockout after 5 failed login attempts, cleared only by successful password reset
 - [x] One-time 6-digit password reset codes with 1-hour expiry and DB-backed hashed persistence
 - [x] SMTP debug transport logging disabled to avoid leaking reset codes or mail transport details in container logs
+- [x] Mail config warnings for placeholder/misaligned SMTP sender settings
+- [x] Runtime SMTP config supports explicit `SMTP_FROM_NAME`, `SMTP_REPLY_TO`, `SMTP_SENDER`, and optional public URL envs for domain-based auth links
 - [x] No hardcoded passwords, tokens, or secrets in source code
 - [x] `.env` git-ignored, `.env.example` has placeholders only
 
@@ -80,6 +82,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - NestJS source code exists but is not used at runtime (plain Node.js servers are active instead).
 - 2 build scripts remain blocked (`msgpackr-extract`, `sharp`) - needed for Next.js builds, not blocking current development.
 - Auth endpoints still need rate limiting and resend throttling.
+- Real inbox delivery still depends on a verified `SMTP_FROM` sender and aligned SPF/DKIM/DMARC for the chosen SMTP relay.
 
 ## Current Port Assignments (from `.env`)
 | Service | Host Port |
@@ -107,5 +110,6 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-09 | Password reset uses SMTP-delivered 6-digit codes plus strong password rules | Clearer UX and stricter auth validation |
 | 2026-07-09 | Login failures are tracked in PostgreSQL and lock accounts after 5 attempts | Keeps frontend counters synchronized with the database and requires password reset for unlock |
 | 2026-07-09 | Password reset codes are stored in PostgreSQL as hashes | Survives API restarts, keeps plaintext codes out of the database, and aligns reset persistence with activation tokens |
+| 2026-07-09 | Docker Postgres healthcheck now checks the real app database | Stops repeated `database "mp_admin" does not exist` log spam |
 | 2026-07-09 | Nodemailer debug logging disabled in runtime | Prevents reset codes and SMTP details from appearing in `docker logs` |
 | 2026-07-09 | New accounts stay inactive until email activation or forgot-password activation | Keeps registration explicit and gives an owner-approved recovery path for expired activation links |

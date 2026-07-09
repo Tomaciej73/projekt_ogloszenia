@@ -157,6 +157,7 @@ function isMatchingActivationToken(expectedHash, actualToken) {
 }
 
 function getApiBaseUrl(req) {
+  if (process.env.API_PUBLIC_URL) return process.env.API_PUBLIC_URL.replace(/\/$/, "");
   const protocol = req.headers["x-forwarded-proto"] || "http";
   return `${protocol}://${req.headers.host}`;
 }

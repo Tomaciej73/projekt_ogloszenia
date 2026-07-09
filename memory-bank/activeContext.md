@@ -15,6 +15,7 @@ A fully working application is running: user registration/login with JWT Bearer 
 - **Pinned package manager:** pnpm@11.10.0
 - **Workspace protocol:** `workspace:*` for inter-package dependencies
 - **Security:** All credentials from `.env` via dotenv. No hardcoded secrets in source code. PBKDF2+SHA512+16B salt for passwords. JWT Bearer auth. New accounts are inactive until activated by email link or by the forgot-password activation flow. Accounts lock after 5 failed login attempts and are unlocked only by completing the password reset flow. Password reset requires a registered email, a one-time 6-digit code whose SHA-256 hash is stored in PostgreSQL, and a strong password (uppercase, lowercase, number, special character).
+- **Mail deliverability constraint:** The SMTP relay currently accepts messages, and runtime config now points to `noreply@manager.multiportal.site`, but real inbox delivery to providers like Gmail/Onet still depends on that mailbox actually existing on the relay plus aligned SPF/DKIM/DMARC.
 - **Owner's changes are authoritative:** Port numbers, configuration values, file names chosen by the project owner must not be reverted or "corrected" by AI. See `.clinerules/01-project.md`.
 - **Current port assignments (from `.env`):** PostgreSQL 5243, Redis 6739, MinIO API 9000, MinIO Console 9001, API 3001, Web 3000.
 
@@ -34,6 +35,9 @@ A fully working application is running: user registration/login with JWT Bearer 
 
 ## Recent Changes
 
+- 2026-07-09: Switched source defaults and runtime SMTP sender config to `noreply@manager.multiportal.site`, added `SMTP_FROM_NAME` / `SMTP_REPLY_TO` / `SMTP_SENDER`, and added optional `API_PUBLIC_URL` / `WEB_PUBLIC_URL` support for public auth links.
+- 2026-07-09: Fixed Docker PostgreSQL healthcheck spam by pointing `pg_isready` at the real application database instead of the username-derived default database.
+- 2026-07-09: Added mail configuration warnings and `.env.example` SMTP placeholders so placeholder senders are easier to spot before testing inbox delivery.
 - 2026-07-09: Added account activation flow - registration now creates inactive accounts, sends a 1-hour activation link by email, blocks login until activation, and allows inactive accounts to be activated through the forgot-password reset flow.
 - 2026-07-09: Added DB-backed login lockout - accounts lock after 5 failed password attempts, login responses now return remaining attempts from PostgreSQL, and only the reset-password flow clears the lock.
 - 2026-07-09: Password reset codes now persist in PostgreSQL as SHA-256 hashes with expiry, request timestamp, and attempt counter, so API restarts no longer invalidate pending resets.
