@@ -25,6 +25,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
 - [x] `POST /auth/forgot-password` - validates email/account existence, generates a 6-digit reset code, stores only its DB-backed hash plus expiry metadata, sends it via SMTP, and doubles as the recovery activation path for inactive accounts
 - [x] `POST /auth/reset-password` - validates email, DB-backed reset code hash, strong password rules, changes password, clears reset state, unlocks locked accounts, and activates inactive accounts
+- [x] `GET /auth/csrf` - issues and refreshes the same-origin CSRF token used by mutating browser requests
 - [x] `GET /auth/me` - current user info
 - [x] `POST /auth/logout` - clears the HttpOnly auth cookie
 - [x] `GET /health` - health check with DB status
@@ -34,7 +35,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `GET /publication-jobs/:id` - job status
 - [x] `GET /providers` - list marketplace providers
 - [x] `GET/POST /marketplace-accounts` - connect provider accounts
-- [x] `POST /media/upload-url` - MinIO presigned URL generation
+- [x] `POST /media/upload-url` - intentionally disabled in the active runtime because direct presigned uploads bypass server-side file validation
 - [x] Email validation (regex), strong password validation (min 8, uppercase, lowercase, number, special character), reset code validation, and input sanitization
 - [x] Pretty JSON responses (2-space indent)
 
@@ -45,11 +46,11 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] 3 retry attempts with exponential backoff (2s, 4s, 8s)
 
 ### Frontend (`apps/web/`)
-- [x] `public/index.html` - landing page with Login/Register tabs, activation-aware registration/login messaging, DB-synced remaining login-attempt messaging, same-origin API calls, forgot-password flow, reset code entry, and stronger password guidance
-- [x] `public/create-listing.html` - listing creation form
-- [x] `public/dashboard.html` - publication dashboard: list listings, select provider, publish
-- [x] `public/register.html` - standalone registration page with strong password rules and activation-required messaging
-- [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint and DB-synced remaining login-attempt messaging
+- [x] `public/index.html` - landing page with Login/Register tabs, activation-aware registration/login messaging, DB-synced remaining login-attempt messaging, same-origin API calls, CSRF-aware mutations, forgot-password flow, reset code entry, and stronger password guidance
+- [x] `public/create-listing.html` - listing creation form with client-side invalid/corrupted image rejection before upload
+- [x] `public/dashboard.html` - publication dashboard: list listings, select provider, publish, and send CSRF-protected mutating requests
+- [x] `public/register.html` - standalone registration page with strong password rules, activation-required messaging, and CSRF-protected signup
+- [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint, DB-synced remaining login-attempt messaging, and CSRF-protected login
 - [x] `front-server.js` - static file server plus same-origin API and MinIO media proxy for VPS/Nginx deployment
 - [x] Dashboard after login with listing list and stats
 - [x] Session persistence via HttpOnly auth cookie plus non-secret user cache in localStorage (survives refresh/new tab)
@@ -58,6 +59,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] All credentials only from `.env` via dotenv
 - [x] PBKDF2 + SHA512 + 100k iterations + 16B random salt
 - [x] Browser authentication via HttpOnly same-site JWT cookie
+- [x] Same-origin CSRF protection for browser mutations via `mp_csrf` cookie plus `X-CSRF-Token`
 - [x] Account activation via 1-hour email link with DB-backed activation token hash
 - [x] Account lockout after 5 failed login attempts, cleared only by successful password reset
 - [x] One-time 6-digit password reset codes with 1-hour expiry and DB-backed hashed persistence
@@ -67,6 +69,8 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Mail config warnings for placeholder/misaligned SMTP sender settings
 - [x] Runtime SMTP config supports explicit `SMTP_FROM_NAME`, `SMTP_REPLY_TO`, `SMTP_SENDER`, and optional public URL envs for domain-based auth links
 - [x] Listing media URLs now stay on the web origin, so thumbnails no longer depend on direct `localhost:9000` or MinIO host exposure
+- [x] Uploads now accept only server-validated JPG/PNG/GIF/WebP payloads, blocking renamed text/script files and malformed image payloads before MinIO storage
+- [x] Static HTML now ships with CSP and standard browser security headers from the front server
 - [x] No hardcoded passwords, tokens, or secrets in source code
 - [x] `.env` git-ignored, `.env.example` has placeholders only
 
@@ -89,6 +93,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - 2 build scripts remain blocked (`msgpackr-extract`, `sharp`) - needed for Next.js builds, not blocking current development.
 - Auth endpoints still need rate limiting and resend throttling.
 - Manual security review is still in progress; JWT is no longer stored in `localStorage`, but any future same-origin XSS could still act through an active browser session even though it can no longer trivially exfiltrate the JWT.
+- The upload path now blocks renamed/corrupted non-images through MIME sniffing and image-structure checks, but it does not yet run a dedicated antivirus engine such as ClamAV for full malware scanning.
 - Real inbox delivery still depends on a verified `SMTP_FROM` sender and aligned SPF/DKIM/DMARC for the chosen SMTP relay.
 
 ## Current Port Assignments (from `.env`)
@@ -130,3 +135,5 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-09 | Docker SMTP env now passes `SMTP_SECURE`, and sender config aligns with `noreply@multiportal.site` | Ensures recreated API containers use the intended Home.pl SSL mailbox config and improves inbox acceptance |
 | 2026-07-09 | Listing photo URLs are now restricted to uploaded media paths and rendered via DOM APIs | Blocks stored XSS through malicious `photoUrls` values and suppresses legacy unsafe records in API responses |
 | 2026-07-09 | Browser auth moved from JWT-in-`localStorage` to an HttpOnly `mp_auth` cookie | Reduces account-takeover impact of future XSS by keeping the signed session token out of JavaScript-readable storage |
+| 2026-07-09 | Mutating browser requests now require a same-origin CSRF token and static HTML is served with CSP/security headers | Adds defense-in-depth around the new cookie-based session model and reduces the blast radius of DOM/script injection bugs |
+| 2026-07-09 | Direct presigned uploads were disabled and `/media/upload` now validates real image payloads before storage | Prevents renamed text/script files and malformed uploads from being stored as listing photos |

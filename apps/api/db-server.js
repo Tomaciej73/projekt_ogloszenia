@@ -7,7 +7,7 @@ const { Queue } = require("bullmq");
 const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
-const { getPresignedUploadUrl, ensureBucket, minioClient, BUCKET } = require("./minio");
+const { ensureBucket, minioClient, BUCKET } = require("./minio");
 const { sendPasswordResetEmail, sendAccountActivationEmail, formatMailDeliveryResult } = require("./mail");
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6739";
@@ -27,17 +27,39 @@ const MAX_LOGIN_ATTEMPTS = 5;
 const MAX_RESET_ATTEMPTS = 5;
 const MEDIA_PROXY_PREFIX = "/media-files";
 const AUTH_COOKIE_NAME = "mp_auth";
+const CSRF_COOKIE_NAME = "mp_csrf";
+const CSRF_HEADER_NAME = "x-csrf-token";
 const AUTH_COOKIE_MAX_AGE_SECONDS = 24 * 60 * 60;
+const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION = 12000;
+const ALLOWED_IMAGE_FILE_TYPES_LABEL = "JPG, PNG, GIF, or WebP";
 const INACTIVE_LOGIN_MESSAGE = "Your account is not active yet. Check your email for the activation link or use Forgot password to activate your account.";
 const INACTIVE_REGISTER_MESSAGE = "An account with this email already exists but is not active. Use Forgot password to activate your account and set a new password.";
 const LOCKED_LOGIN_MESSAGE = "Your account is locked after 5 failed login attempts. Use Forgot password to unlock your account and set a new password.";
 
+function getBaseSecurityHeaders() {
+  return {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), geolocation=(), microphone=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+  };
+}
+
+function getCorsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-CSRF-Token",
+  };
+}
+
 function jsonResponse(res, status, data, extraHeaders = {}) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    ...getBaseSecurityHeaders(),
+    ...getCorsHeaders(),
     ...extraHeaders,
   });
   res.end(JSON.stringify(data, null, JSON_SPACES));
@@ -46,6 +68,8 @@ function jsonResponse(res, status, data, extraHeaders = {}) {
 function htmlResponse(res, status, html, extraHeaders = {}) {
   res.writeHead(status, {
     "Content-Type": "text/html; charset=utf-8",
+    ...getBaseSecurityHeaders(),
+    "Content-Security-Policy": "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
     ...extraHeaders,
   });
   res.end(html);
@@ -417,6 +441,25 @@ function buildAuthCookie(req, token) {
   });
 }
 
+function normalizeCsrfToken(token) {
+  const value = String(token || "").trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(value) ? value : "";
+}
+
+function generateCsrfToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function buildCsrfCookie(req, token) {
+  return buildCookieHeader(CSRF_COOKIE_NAME, token, {
+    maxAge: AUTH_COOKIE_MAX_AGE_SECONDS,
+    path: "/",
+    httpOnly: false,
+    sameSite: "Strict",
+    secure: isSecureRequest(req),
+  });
+}
+
 function buildClearedAuthCookie(req) {
   return buildCookieHeader(AUTH_COOKIE_NAME, "", {
     maxAge: 0,
@@ -449,12 +492,232 @@ function getUserId(req) {
   return verifyToken(cookies[AUTH_COOKIE_NAME] || "");
 }
 
+function isMutationMethod(method) {
+  return method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH";
+}
+
+function getAllowedOrigins(req) {
+  return new Set(
+    [getWebBaseUrl(req), getApiBaseUrl(req)]
+      .map((value) => String(value || "").replace(/\/$/, ""))
+      .filter(Boolean),
+  );
+}
+
+function timingSafeEqualText(left, right) {
+  if (typeof left !== "string" || typeof right !== "string") return false;
+  const leftBuffer = Buffer.from(left, "utf8");
+  const rightBuffer = Buffer.from(right, "utf8");
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function getCsrfValidationError(req, path) {
+  if (!isMutationMethod(req.method) || path === "/auth/csrf") return null;
+
+  const origin = String(req.headers.origin || "").replace(/\/$/, "");
+  if (origin && !getAllowedOrigins(req).has(origin)) {
+    return "Invalid request origin.";
+  }
+
+  const cookies = parseCookies(req);
+  const cookieToken = normalizeCsrfToken(cookies[CSRF_COOKIE_NAME]);
+  const headerToken = normalizeCsrfToken(req.headers[CSRF_HEADER_NAME]);
+
+  if (!cookieToken || !headerToken) {
+    return "Security token missing. Refresh the page and try again.";
+  }
+
+  if (!timingSafeEqualText(cookieToken, headerToken)) {
+    return "Security token mismatch. Refresh the page and try again.";
+  }
+
+  return null;
+}
+
+function readUInt24LE(buffer, offset) {
+  return buffer[offset] | (buffer[offset + 1] << 8) | (buffer[offset + 2] << 16);
+}
+
+function inspectPng(buffer) {
+  if (buffer.length < 24) return null;
+  if (buffer.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") return null;
+  if (buffer.toString("ascii", 12, 16) !== "IHDR") return null;
+
+  return {
+    mimeType: "image/png",
+    extension: "png",
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20),
+  };
+}
+
+function inspectGif(buffer) {
+  if (buffer.length < 10) return null;
+  const signature = buffer.toString("ascii", 0, 6);
+  if (signature !== "GIF87a" && signature !== "GIF89a") return null;
+
+  return {
+    mimeType: "image/gif",
+    extension: "gif",
+    width: buffer.readUInt16LE(6),
+    height: buffer.readUInt16LE(8),
+  };
+}
+
+function inspectWebp(buffer) {
+  if (buffer.length < 30) return null;
+  if (buffer.toString("ascii", 0, 4) !== "RIFF" || buffer.toString("ascii", 8, 12) !== "WEBP") return null;
+
+  const chunkType = buffer.toString("ascii", 12, 16);
+  if (chunkType === "VP8X") {
+    return {
+      mimeType: "image/webp",
+      extension: "webp",
+      width: 1 + readUInt24LE(buffer, 24),
+      height: 1 + readUInt24LE(buffer, 27),
+    };
+  }
+
+  if (chunkType === "VP8L" && buffer.length >= 25 && buffer[20] === 0x2f) {
+    const width = 1 + ((buffer[21] | (buffer[22] << 8)) & 0x3fff);
+    const height = 1 + (((buffer[22] >> 6) | (buffer[23] << 2) | ((buffer[24] & 0x0f) << 10)) & 0x3fff);
+    return {
+      mimeType: "image/webp",
+      extension: "webp",
+      width,
+      height,
+    };
+  }
+
+  if (chunkType === "VP8 " && buffer.length >= 30) {
+    const startCode = buffer.subarray(23, 26);
+    if (startCode[0] !== 0x9d || startCode[1] !== 0x01 || startCode[2] !== 0x2a) return null;
+
+    return {
+      mimeType: "image/webp",
+      extension: "webp",
+      width: buffer.readUInt16LE(26) & 0x3fff,
+      height: buffer.readUInt16LE(28) & 0x3fff,
+    };
+  }
+
+  return null;
+}
+
+function inspectJpeg(buffer) {
+  if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return null;
+
+  let offset = 2;
+  while (offset + 8 < buffer.length) {
+    if (buffer[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+
+    while (buffer[offset] === 0xff) offset += 1;
+    const marker = buffer[offset];
+    offset += 1;
+
+    if (marker === 0xd9 || marker === 0xda) break;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (offset + 2 > buffer.length) return null;
+
+    const segmentLength = buffer.readUInt16BE(offset);
+    if (segmentLength < 2 || offset + segmentLength > buffer.length) return null;
+
+    const isStartOfFrame =
+      (marker >= 0xc0 && marker <= 0xc3) ||
+      (marker >= 0xc5 && marker <= 0xc7) ||
+      (marker >= 0xc9 && marker <= 0xcb) ||
+      (marker >= 0xcd && marker <= 0xcf);
+
+    if (isStartOfFrame) {
+      return {
+        mimeType: "image/jpeg",
+        extension: "jpg",
+        height: buffer.readUInt16BE(offset + 3),
+        width: buffer.readUInt16BE(offset + 5),
+      };
+    }
+
+    offset += segmentLength;
+  }
+
+  return null;
+}
+
+function detectImageDetails(buffer) {
+  return inspectPng(buffer) || inspectJpeg(buffer) || inspectGif(buffer) || inspectWebp(buffer);
+}
+
+function sanitizeFileStem(fileName) {
+  const safeName = sanitize(fileName, 200)
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-_.]+|[-_.]+$/g, "");
+  return safeName.slice(0, 80) || "image";
+}
+
+function decodeBase64Strict(rawData) {
+  if (typeof rawData !== "string") return null;
+  const normalized = rawData.replace(/\s+/g, "");
+  if (!normalized || normalized.length % 4 !== 0) return null;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) return null;
+
+  try {
+    const buffer = Buffer.from(normalized, "base64");
+    return buffer.length > 0 ? buffer : null;
+  } catch {
+    return null;
+  }
+}
+
+function validateUploadedImage({ fileName, contentType, data }) {
+  const buffer = decodeBase64Strict(data);
+  if (!buffer) {
+    return { error: "Invalid file encoding. Upload a real image file instead of a renamed or corrupted file." };
+  }
+
+  if (buffer.length > MAX_UPLOAD_FILE_SIZE_BYTES) {
+    return { error: `Image is too large. Maximum size is ${Math.round(MAX_UPLOAD_FILE_SIZE_BYTES / (1024 * 1024))} MB.` };
+  }
+
+  const details = detectImageDetails(buffer);
+  if (!details) {
+    return { error: `Only valid ${ALLOWED_IMAGE_FILE_TYPES_LABEL} image files are accepted. Renamed text, script, or corrupted files are blocked.` };
+  }
+
+  if (
+    !Number.isInteger(details.width) ||
+    !Number.isInteger(details.height) ||
+    details.width < 1 ||
+    details.height < 1 ||
+    details.width > MAX_IMAGE_DIMENSION ||
+    details.height > MAX_IMAGE_DIMENSION
+  ) {
+    return { error: "Image dimensions are invalid or exceed the allowed safety limits." };
+  }
+
+  const declaredContentType = String(contentType || "").trim().toLowerCase();
+  if (declaredContentType && declaredContentType !== details.mimeType) {
+    return { error: "Uploaded file content does not match its declared image type." };
+  }
+
+  return {
+    buffer,
+    mimeType: details.mimeType,
+    extension: details.extension,
+    fileName: `${sanitizeFileStem(fileName)}.${details.extension}`,
+  };
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(200, {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      ...getBaseSecurityHeaders(),
+      ...getCorsHeaders(),
     });
     return res.end();
   }
@@ -463,6 +726,19 @@ const server = http.createServer(async (req, res) => {
   const path = requestUrl.pathname;
 
   try {
+    if (path === "/auth/csrf" && req.method === "GET") {
+      const existingToken = normalizeCsrfToken(parseCookies(req)[CSRF_COOKIE_NAME]);
+      const csrfToken = existingToken || generateCsrfToken();
+      return jsonResponse(res, 200, { csrfToken }, {
+        "Set-Cookie": buildCsrfCookie(req, csrfToken),
+        "Cache-Control": "no-store",
+      });
+    }
+
+    const csrfError = getCsrfValidationError(req, path);
+    if (csrfError) {
+      return jsonResponse(res, 403, { error: csrfError }, { "Cache-Control": "no-store" });
+    }
     // ── Auth: Register ──
     if (path === "/auth/register" && req.method === "POST") {
       const body = await parseBody(req).catch(() => null);
@@ -1065,36 +1341,9 @@ const server = http.createServer(async (req, res) => {
 
     // ── Media Upload (MinIO presigned URL) ──
     if (path === "/media/upload-url" && req.method === "POST") {
-      const uid = getUserId(req);
-      if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
-
-      const body = await parseBody(req).catch(() => null);
-      if (!body || !body.fileName || !body.contentType) {
-        return jsonResponse(res, 400, { error: "fileName and contentType are required." });
-      }
-
-      const key = `uploads/${uid}/${Date.now()}-${sanitize(body.fileName, 200)}`;
-      const { uploadUrl, publicUrl } = await getPresignedUploadUrl(key, body.contentType);
-      const proxyPublicUrl = buildMediaPublicUrl(req, key);
-
-      // Only record media if listingId is provided and belongs to the user
-      if (body.listingId) {
-        const listing = await prisma.listingDraft.findUnique({ where: { id: body.listingId } });
-        if (listing) {
-          await prisma.listingMedia.create({
-            data: {
-              url: proxyPublicUrl,
-              key,
-              fileName: sanitize(body.fileName, 200),
-              fileSize: body.fileSize || 0,
-              mimeType: body.contentType,
-              listingDraftId: body.listingId,
-            },
-          });
-        }
-      }
-
-      return jsonResponse(res, 201, { uploadUrl, publicUrl: proxyPublicUrl, key, directPublicUrl: publicUrl });
+      return jsonResponse(res, 410, {
+        error: "Direct presigned uploads are disabled for security. Use the validated /media/upload endpoint instead.",
+      });
     }
 
     // ── Media Upload (direct server-side, base64) ──
@@ -1107,29 +1356,34 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 400, { error: "fileName and data (base64) are required." });
       }
 
-      const buf = Buffer.from(body.data, "base64");
-      const contentType = body.contentType || "application/octet-stream";
-      const key = `uploads/${uid}/${Date.now()}-${sanitize(body.fileName, 200)}`;
+      const uploadedImage = validateUploadedImage(body);
+      if (uploadedImage.error) {
+        return jsonResponse(res, 400, { error: uploadedImage.error });
+      }
+
+      const key = `uploads/${uid}/${Date.now()}-${crypto.randomUUID()}-${uploadedImage.fileName}`;
       const proxyPublicUrl = buildMediaPublicUrl(req, key);
 
       await ensureBucket();
-      await minioClient.putObject(BUCKET, key, buf, buf.length, { "Content-Type": contentType });
+      await minioClient.putObject(BUCKET, key, uploadedImage.buffer, uploadedImage.buffer.length, {
+        "Content-Type": uploadedImage.mimeType,
+      });
 
       // Record media if listingId is provided
       if (body.listingId) {
-        const listing = await prisma.listingDraft.findUnique({ where: { id: body.listingId } });
-        if (listing) {
-          await prisma.listingMedia.create({
-            data: {
-              url: proxyPublicUrl,
-              key,
-              fileName: sanitize(body.fileName, 200),
-              fileSize: body.fileSize || buf.length,
-              mimeType: contentType,
-              listingDraftId: body.listingId,
-            },
-          });
-        }
+        const listing = await prisma.listingDraft.findFirst({ where: { id: body.listingId, userId: uid } });
+        if (!listing) return jsonResponse(res, 404, { error: "Listing not found" });
+
+        await prisma.listingMedia.create({
+          data: {
+            url: proxyPublicUrl,
+            key,
+            fileName: uploadedImage.fileName,
+            fileSize: uploadedImage.buffer.length,
+            mimeType: uploadedImage.mimeType,
+            listingDraftId: body.listingId,
+          },
+        });
       }
 
       return jsonResponse(res, 201, { publicUrl: proxyPublicUrl, key });

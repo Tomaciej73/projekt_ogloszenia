@@ -47,7 +47,7 @@
       <div class="top-bar">
         <h2>📋 My Listings</h2>
         <div>
-          <button class="secondary" onclick="loadData()">🔄 Refresh</button>
+          <button class="secondary" id="refreshBtn">🔄 Refresh</button>
           <a href="/create-listing" style="text-decoration:none"><button style="margin-left:0.5rem">📝 New Listing</button></a>
           <a href="/" style="text-decoration:none"><button class="secondary" style="margin-left:0.5rem">🏠 Home</button></a>
         </div>
@@ -63,11 +63,40 @@
     const API = '';
     const COOKIE_SESSION_MARKER = 'cookie-session';
     let token = localStorage.getItem('token') || '';
+    let csrfToken = '';
 
     function getAuthHeaders(extraHeaders = {}) {
       const jwtLike = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
       return jwtLike ? { ...extraHeaders, Authorization: 'Bearer ' + token } : extraHeaders;
     }
+
+    async function ensureCsrfToken(forceRefresh = false) {
+      if (csrfToken && !forceRefresh) return csrfToken;
+      const res = await fetch(API + '/auth/csrf', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.csrfToken) {
+        throw new Error(data.error || 'Failed to initialize the security token. Refresh the page and try again.');
+      }
+      csrfToken = data.csrfToken;
+      return csrfToken;
+    }
+
+    async function apiFetch(path, options = {}, { auth = false } = {}) {
+      const method = String(options.method || 'GET').toUpperCase();
+      let headers = { ...(options.headers || {}) };
+
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+        headers['X-CSRF-Token'] = await ensureCsrfToken();
+      }
+
+      if (auth) {
+        headers = getAuthHeaders(headers);
+      }
+
+      return fetch(API + path, { ...options, headers });
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', () => loadData());
 
     (async () => {
       try {
@@ -77,6 +106,7 @@
         token = token || COOKIE_SESSION_MARKER;
         localStorage.setItem('token', COOKIE_SESSION_MARKER);
         localStorage.setItem('user', JSON.stringify(data.user));
+        await ensureCsrfToken();
         loadData();
       } catch {
         localStorage.removeItem('token');
@@ -119,9 +149,10 @@
             <div class="providers">
               ${(providersData.providers || []).map(p => {
                 const connected = connectedProviders.has(p.slug);
-                return `<button class="provider-btn"
-                  ${!connected ? 'disabled title="Connect this provider first"' : ''}
-                  onclick="publishListing('${l.id}', '${p.slug}')">
+                return `<button class="provider-btn publish-btn"
+                  data-listing-id="${l.id}"
+                  data-provider-slug="${p.slug}"
+                  ${!connected ? 'disabled title="Connect this provider first"' : ''}>
                   ${p.displayName || p.name}
                   ${!connected ? ' (not connected)' : ''}
                 </button>`;
@@ -129,30 +160,33 @@
             </div>
           </div>
         `).join('');
+
+        list.querySelectorAll('.publish-btn').forEach((button) => {
+          button.addEventListener('click', () => publishListing(button.dataset.listingId, button.dataset.providerSlug, button));
+        });
       } catch (e) {
         showMsg('Failed to load data: ' + e.message, 'error');
       }
     }
 
-    async function publishListing(listingId, providerSlug) {
-      const btn = event.target;
+    async function publishListing(listingId, providerSlug, btn) {
       btn.disabled = true;
       btn.textContent = 'Publishing...';
 
       try {
         // First connect the account if not already connected
-        await fetch(API + '/marketplace-accounts', {
+        await apiFetch('/marketplace-accounts', {
           method: 'POST',
-          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ providerSlug }),
-        });
+        }, { auth: true });
 
         // Create publication job
-        const res = await fetch(API + '/publication-jobs', {
+        const res = await apiFetch('/publication-jobs', {
           method: 'POST',
-          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ listingId }),
-        });
+        }, { auth: true });
 
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Publication failed');

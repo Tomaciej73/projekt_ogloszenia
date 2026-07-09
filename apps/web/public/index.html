@@ -76,37 +76,37 @@
         <div class="panel">
           <h2>🔐 Welcome</h2>
           <div class="tabs">
-            <div class="tab active" onclick="switchTab('login')">Log In</div>
-            <div class="tab" onclick="switchTab('register')">Register</div>
+            <div class="tab active" id="loginTab">Log In</div>
+            <div class="tab" id="registerTab">Register</div>
           </div>
           <div id="tab-login" class="tab-content active">
-            <form onsubmit="handleLogin(event)">
+            <form id="loginForm">
               <label>Email</label>
               <input type="email" id="loginEmail" required placeholder="you@example.com" autocomplete="email">
               <label>Password</label>
               <input type="password" id="loginPassword" required placeholder="Your password" autocomplete="current-password">
               <button type="submit" id="loginBtn">Log In</button>
               <p id="loginAttemptsHint" style="display:none;font-size:0.75rem;color:rgba(255,255,255,0.55);margin-top:0.75rem"></p>
-              <p style="text-align:center;margin-top:0.75rem"><a href="#" onclick="showForgotPassword()" style="color:rgba(255,255,255,0.5);font-size:0.85rem">Forgot password?</a></p>
+              <p style="text-align:center;margin-top:0.75rem"><a href="#" id="forgotPasswordLink" style="color:rgba(255,255,255,0.5);font-size:0.85rem">Forgot password?</a></p>
             </form>
             <div id="forgotPasswordForm" style="display:none;border-top:1px solid rgba(255,255,255,0.1);padding-top:1rem;margin-top:1rem">
               <p style="font-size:0.75rem;color:rgba(255,255,255,0.45);margin-bottom:0.75rem">If your account is inactive or locked, this reset flow will restore access after you set a new password.</p>
               <p style="font-size:0.85rem;color:rgba(255,255,255,0.5);margin-bottom:1rem">Enter your email — you will receive a reset code via email.</p>
               <label>Email</label>
               <input type="email" id="forgotEmail" required placeholder="you@example.com">
-              <button type="button" onclick="handleForgotPassword()" id="forgotBtn">Send Reset Code</button>
+              <button type="button" id="forgotBtn">Send Reset Code</button>
               <div id="resetCodeSection" style="display:none;margin-top:1rem">
                 <label>Reset Code (from your email)</label>
                 <input type="text" id="resetCode" required inputmode="numeric" maxlength="6" pattern="[0-9]{6}" title="Enter the 6-digit code from your email." placeholder="Enter the 6-digit reset code">
                 <label>New Password</label>
                 <input type="password" id="resetPassword" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,128}" title="Use at least 8 characters with uppercase, lowercase, number, and special character." placeholder="New password (min 8 chars)" autocomplete="new-password">
                 <p style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin:-0.5rem 0 1rem">Use at least 8 characters with uppercase, lowercase, number, and special character.</p>
-                <button type="button" onclick="handleResetPassword()" id="resetPwdBtn">Reset Password</button>
+                <button type="button" id="resetPwdBtn">Reset Password</button>
               </div>
             </div>
           </div>
           <div id="tab-register" class="tab-content">
-            <form onsubmit="handleRegister(event)">
+            <form id="registerForm">
               <label>Full Name</label>
               <input type="text" id="regName" required placeholder="Your name" autocomplete="name">
               <label>Email</label>
@@ -140,7 +140,7 @@
           <h2>👤 Account</h2>
           <p style="margin-bottom:0.5rem"><strong id="userName">—</strong></p>
           <p style="color:rgba(255,255,255,0.5);font-size:0.9rem" id="userEmail">—</p>
-          <button class="secondary" style="margin-top:1.5rem" onclick="handleLogout()">🚪 Log Out</button>
+          <button class="secondary" style="margin-top:1.5rem" id="logoutBtn">🚪 Log Out</button>
         </div>
         <div class="panel">
           <h2>📊 My Listings</h2>
@@ -149,8 +149,8 @@
             <div class="stat"><div class="val" id="providerCount">3</div><div class="lbl">Providers</div></div>
           </div>
           <div class="action-row">
-            <button onclick="location.href='/create-listing'">📝 New Listing</button>
-            <button class="secondary" onclick="loadListings()">🔄 Refresh</button>
+            <button id="newListingBtn">📝 New Listing</button>
+            <button class="secondary" id="refreshListingsBtn">🔄 Refresh</button>
           </div>
           <div class="listings" id="listingsList">
             <p style="color:rgba(255,255,255,0.4);padding:1rem">Loading...</p>
@@ -160,12 +160,12 @@
     </div>
 
     <!-- Detail Modal -->
-    <div class="detail-modal" id="detailModal" onclick="if(event.target===this) closeDetail()">
+    <div class="detail-modal" id="detailModal">
       <div class="detail-content" id="detailContent"></div>
     </div>
 
     <!-- Edit Modal -->
-    <div class="detail-modal" id="editModal" onclick="if(event.target===this) closeEdit()">
+    <div class="detail-modal" id="editModal">
       <div class="detail-content" id="editContent"></div>
     </div>
   </div>
@@ -176,11 +176,41 @@
     const PASSWORD_RULES = 'Use at least 8 characters with uppercase, lowercase, number, and special character.';
     const PHOTO_FALLBACK_DATA_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ctext y='20' x='8' font-size='12'%3E%F0%9F%96%BC%3C/text%3E%3C/svg%3E";
     const COOKIE_SESSION_MARKER = 'cookie-session';
+    const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+    const MAX_IMAGE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+    const MAX_IMAGE_FILE_SIZE_MB = Math.round(MAX_IMAGE_FILE_SIZE_BYTES / (1024 * 1024));
+    let csrfToken = '';
 
     function getAuthHeaders(extraHeaders = {}) {
       const token = localStorage.getItem('token') || '';
       const jwtLike = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
       return jwtLike ? { ...extraHeaders, Authorization: 'Bearer ' + token } : extraHeaders;
+    }
+
+    async function ensureCsrfToken(forceRefresh = false) {
+      if (csrfToken && !forceRefresh) return csrfToken;
+      const res = await fetch(API + '/auth/csrf', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.csrfToken) {
+        throw new Error(data.error || 'Failed to initialize the security token. Refresh the page and try again.');
+      }
+      csrfToken = data.csrfToken;
+      return csrfToken;
+    }
+
+    async function apiFetch(path, options = {}, { auth = false } = {}) {
+      const method = String(options.method || 'GET').toUpperCase();
+      let headers = { ...(options.headers || {}) };
+
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+        headers['X-CSRF-Token'] = await ensureCsrfToken();
+      }
+
+      if (auth) {
+        headers = getAuthHeaders(headers);
+      }
+
+      return fetch(API + path, { ...options, headers });
     }
 
     // ── TOAST ──
@@ -230,6 +260,65 @@
           : 'rgba(255,255,255,0.55)';
     }
 
+    async function validateImageFile(file) {
+      if (!(file instanceof File)) {
+        throw new Error('Invalid file.');
+      }
+      if (!ALLOWED_IMAGE_MIME_TYPES.has(file.type)) {
+        throw new Error('Only JPG, PNG, GIF, or WebP images are allowed.');
+      }
+      if (file.size < 1) {
+        throw new Error('The selected image file is empty.');
+      }
+      if (file.size > MAX_IMAGE_FILE_SIZE_BYTES) {
+        throw new Error(`Image is too large. Maximum size is ${MAX_IMAGE_FILE_SIZE_MB} MB.`);
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      try {
+        await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => {
+            if (!img.naturalWidth || !img.naturalHeight) {
+              reject(new Error('The image is corrupted or has invalid dimensions.'));
+              return;
+            }
+            resolve();
+          };
+          img.onerror = () => reject(new Error('This file is not a valid image or is corrupted.'));
+          img.src = objectUrl;
+        });
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+
+    function bindStaticEventListeners() {
+      document.getElementById('loginTab')?.addEventListener('click', () => switchTab('login'));
+      document.getElementById('registerTab')?.addEventListener('click', () => switchTab('register'));
+      document.getElementById('loginForm')?.addEventListener('submit', handleLogin);
+      document.getElementById('registerForm')?.addEventListener('submit', handleRegister);
+      document.getElementById('forgotPasswordLink')?.addEventListener('click', (event) => {
+        event.preventDefault();
+        showForgotPassword();
+      });
+      document.getElementById('forgotBtn')?.addEventListener('click', handleForgotPassword);
+      document.getElementById('resetPwdBtn')?.addEventListener('click', handleResetPassword);
+      document.getElementById('logoutBtn')?.addEventListener('click', handleLogout);
+      document.getElementById('newListingBtn')?.addEventListener('click', () => { window.location.href = '/create-listing'; });
+      document.getElementById('refreshListingsBtn')?.addEventListener('click', () => loadListings());
+
+      const detailModal = document.getElementById('detailModal');
+      detailModal?.addEventListener('click', (event) => {
+        if (event.target === detailModal) closeDetail();
+      });
+
+      const editModal = document.getElementById('editModal');
+      editModal?.addEventListener('click', (event) => {
+        if (event.target === editModal) closeEdit();
+      });
+    }
+
     // ── AUTH ──
     async function handleLogin(e) {
       e.preventDefault();
@@ -237,7 +326,7 @@
       const loginEmail = document.getElementById('loginEmail').value.trim();
       btn.disabled = true; btn.textContent = 'Logging in...';
       try {
-        const res = await fetch(API + '/auth/login', {
+        const res = await apiFetch('/auth/login', {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({ email: loginEmail, password: document.getElementById('loginPassword').value }),
         });
@@ -284,7 +373,7 @@
       }
       btn.disabled = true; btn.textContent = 'Creating...';
       try {
-        const res = await fetch(API + '/auth/register', {
+        const res = await apiFetch('/auth/register', {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({ name: document.getElementById('regName').value, email: document.getElementById('regEmail').value, password }),
         });
@@ -303,7 +392,7 @@
 
     async function handleLogout() {
       try {
-        await fetch(API + '/auth/logout', { method: 'POST' });
+        await apiFetch('/auth/logout', { method: 'POST' });
       } catch {
         // Best-effort cookie cleanup; local state is still cleared below.
       }
@@ -468,15 +557,18 @@
     }
 
     async function uploadPhotoForListing(file, listingId) {
-      const token = localStorage.getItem('token');
+      await validateImageFile(file);
       const data = await readFileAsBase64(file);
       const body = { fileName: file.name, contentType: file.type, fileSize: file.size, data, listingId };
-      const res = await fetch(API + '/media/upload', {
+      const res = await apiFetch('/media/upload', {
         method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error('Failed to upload file');
+      }, { auth: true });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to upload file');
+      }
       const { publicUrl } = await res.json();
       return publicUrl;
     }
@@ -515,12 +607,10 @@
 
     async function deletePhoto(listingId, index) {
       if (!confirm('Remove this photo?')) return;
-      const token = localStorage.getItem('token');
       try {
-        const res = await fetch(API + '/listings/' + listingId + '/photos/' + index, {
+        const res = await apiFetch('/listings/' + listingId + '/photos/' + index, {
           method: 'DELETE',
-          headers: getAuthHeaders(),
-        });
+        }, { auth: true });
         if (!res.ok) throw new Error((await res.json()).error || 'Delete failed');
         refreshPhotoGrid(listingId);
       } catch(e) { toast(e.message, 'error'); }
@@ -539,11 +629,11 @@
         const [moved] = photos.splice(index, 1);
         photos.unshift(moved);
         // Save reordered
-        const res = await fetch(API + '/listings/' + listingId + '/photos', {
+        const res = await apiFetch('/listings/' + listingId + '/photos', {
           method: 'PUT',
-          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ urls: photos }),
-        });
+        }, { auth: true });
         if (!res.ok) throw new Error((await res.json()).error || 'Reorder failed');
         refreshPhotoGrid(listingId);
       } catch(e) { toast(e.message, 'error'); }
@@ -571,11 +661,11 @@
         const photos = [...(l.photoUrls || [])];
         const [moved] = photos.splice(draggedIndex, 1);
         photos.splice(targetIndex, 0, moved);
-        const res = await fetch(API + '/listings/' + listingId + '/photos', {
+        const res = await apiFetch('/listings/' + listingId + '/photos', {
           method: 'PUT',
-          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ urls: photos }),
-        });
+        }, { auth: true });
         if (!res.ok) throw new Error((await res.json()).error || 'Reorder failed');
         draggedIndex = null;
         refreshPhotoGrid(listingId);
@@ -598,11 +688,11 @@
       }
       if (urls.length > 0) {
         const token = localStorage.getItem('token');
-        await fetch(API + '/listings/' + listingId + '/photos', {
+        await apiFetch('/listings/' + listingId + '/photos', {
           method: 'POST',
-          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ urls }),
-        });
+        }, { auth: true });
         refreshPhotoGrid(listingId);
       }
       input.value = '';
@@ -623,7 +713,7 @@
             <div id="editPhotoGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:0.5rem;margin-bottom:0.5rem"></div>
             <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
               <input type="file" id="editPhotoInput" accept="image/*" multiple style="flex:1;margin-bottom:0;padding:8px">
-              <button type="button" onclick="addPhotosFromEdit('${l.id}')" style="width:auto;padding:8px 16px;white-space:nowrap">📷 Add</button>
+              <button type="button" id="editAddPhotosBtn" style="width:auto;padding:8px 16px;white-space:nowrap">📷 Add</button>
             </div>
             <p style="font-size:0.7rem;color:rgba(255,255,255,0.4);margin-top:-0.5rem;margin-bottom:1rem">Drag to reorder · Click ★ to set as primary</p>
           `;
@@ -646,10 +736,13 @@
             </select>
             ${photosSection}
             <div style="margin-top:1rem;display:flex;gap:0.5rem">
-              <button onclick="saveEdit('${l.id}')">💾 Save</button>
-              <button class="secondary" onclick="closeEdit()">Cancel</button>
+              <button id="saveEditBtn">💾 Save</button>
+              <button class="secondary" id="cancelEditBtn">Cancel</button>
             </div>
           `;
+          document.getElementById('editAddPhotosBtn')?.addEventListener('click', () => addPhotosFromEdit(l.id));
+          document.getElementById('saveEditBtn')?.addEventListener('click', () => saveEdit(l.id));
+          document.getElementById('cancelEditBtn')?.addEventListener('click', closeEdit);
           // Build photo grid after DOM is ready
           setTimeout(() => buildPhotoGrid(l.id, photoUrls), 0);
         });
@@ -667,11 +760,11 @@
         status: document.getElementById('editStatus').value,
       };
       try {
-        const res = await fetch(API + '/listings/' + id, {
+        const res = await apiFetch('/listings/' + id, {
           method: 'PUT',
-          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-        });
+        }, { auth: true });
         if (!res.ok) throw new Error((await res.json()).error || 'Update failed');
         toast('Listing updated!', 'success');
         closeEdit();
@@ -683,10 +776,9 @@
       if (!confirm('Are you sure you want to delete this listing?')) return;
       const token = localStorage.getItem('token');
       try {
-        const res = await fetch(API + '/listings/' + id, {
+        const res = await apiFetch('/listings/' + id, {
           method: 'DELETE',
-          headers: getAuthHeaders(),
-        });
+        }, { auth: true });
         if (!res.ok) throw new Error((await res.json()).error || 'Delete failed');
         toast('Listing deleted.', 'warning');
         loadListings();
@@ -703,7 +795,7 @@
       const btn = document.getElementById('forgotBtn');
       btn.disabled = true; btn.textContent = 'Sending...';
       try {
-        const res = await fetch(API + '/auth/forgot-password', {
+        const res = await apiFetch('/auth/forgot-password', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: document.getElementById('forgotEmail').value }),
         });
@@ -731,7 +823,7 @@
       }
       btn.disabled = true; btn.textContent = 'Resetting...';
       try {
-        const res = await fetch(API + '/auth/reset-password', {
+        const res = await apiFetch('/auth/reset-password', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: forgotEmail, code: resetCode, password }),
         });
@@ -971,6 +1063,8 @@
     function escapeHtml(str) { const d = document.createElement('div'); d.textContent = str||''; return d.innerHTML; }
 
     // ── INIT ──
+    bindStaticEventListeners();
+
     (async () => {
       const saved = localStorage.getItem('user');
       if (saved) {
@@ -982,6 +1076,7 @@
       }
 
       try {
+        await ensureCsrfToken();
         const res = await fetch(API + '/auth/me');
         if (!res.ok) throw new Error('Not authenticated');
         const data = await res.json();

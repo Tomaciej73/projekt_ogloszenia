@@ -45,6 +45,28 @@
 
   <script>
     const API = '';
+    let csrfToken = '';
+
+    async function ensureCsrfToken(forceRefresh = false) {
+      if (csrfToken && !forceRefresh) return csrfToken;
+      const res = await fetch(API + '/auth/csrf', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.csrfToken) {
+        throw new Error(data.error || 'Failed to initialize the security token. Refresh the page and try again.');
+      }
+      csrfToken = data.csrfToken;
+      return csrfToken;
+    }
+
+    (async () => {
+      try {
+        await ensureCsrfToken();
+      } catch (error) {
+        const result = document.getElementById('result');
+        result.className = 'result error';
+        result.textContent = error.message;
+      }
+    })();
 
     function validatePasswordStrength(password) {
       if (!password || password.length < 8) return 'Password must be at least 8 characters.';
@@ -72,9 +94,13 @@
       result.style.display = 'none';
 
       try {
+        const csrfValue = await ensureCsrfToken();
         const res = await fetch(API + '/auth/register', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfValue,
+          },
           body: JSON.stringify({
             name: document.getElementById('name').value,
             email: document.getElementById('email').value,

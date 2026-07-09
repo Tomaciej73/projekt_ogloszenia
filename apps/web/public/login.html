@@ -43,6 +43,28 @@
   <script>
     const API = '';
     const COOKIE_SESSION_MARKER = 'cookie-session';
+    let csrfToken = '';
+
+    async function ensureCsrfToken(forceRefresh = false) {
+      if (csrfToken && !forceRefresh) return csrfToken;
+      const res = await fetch(API + '/auth/csrf', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.csrfToken) {
+        throw new Error(data.error || 'Failed to initialize the security token. Refresh the page and try again.');
+      }
+      csrfToken = data.csrfToken;
+      return csrfToken;
+    }
+
+    (async () => {
+      try {
+        await ensureCsrfToken();
+      } catch (error) {
+        const result = document.getElementById('result');
+        result.className = 'result error';
+        result.textContent = error.message;
+      }
+    })();
 
     function setAttemptsHint(message, tone = 'warning') {
       const hint = document.getElementById('attemptsHint');
@@ -67,9 +89,13 @@
       result.style.display = 'none';
 
       try {
+        const csrfValue = await ensureCsrfToken();
         const res = await fetch(API + '/auth/login', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfValue,
+          },
           body: JSON.stringify({
             email,
             password: document.getElementById('password').value,

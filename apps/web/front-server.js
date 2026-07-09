@@ -2,6 +2,7 @@ const http = require("http");
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const API_PROXY_URL = process.env.API_PROXY_URL || `http://localhost:${process.env.API_PORT || 3001}`;
 const MEDIA_PROXY_URL = process.env.MINIO_PROXY_URL || `http://localhost:${process.env.MINIO_API_PORT || 9000}`;
@@ -22,6 +23,42 @@ function isApiRoute(pathname) {
 
 function isMediaRoute(pathname) {
   return pathname === MEDIA_ROUTE_PREFIX || pathname.startsWith(`${MEDIA_ROUTE_PREFIX}/`);
+}
+
+function buildBaseSecurityHeaders() {
+  return {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), geolocation=(), microphone=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+  };
+}
+
+function injectNonceIntoHtml(html, nonce) {
+  return html
+    .replace(/<script(?![^>]*\bnonce=)/g, `<script nonce="${nonce}"`)
+    .replace(/<style(?![^>]*\bnonce=)/g, `<style nonce="${nonce}"`);
+}
+
+function buildHtmlSecurityHeaders(nonce) {
+  return {
+    ...buildBaseSecurityHeaders(),
+    "Cache-Control": "no-store",
+    "Content-Security-Policy": [
+      "default-src 'self'",
+      `script-src 'self' 'nonce-${nonce}'`,
+      "script-src-attr 'none'",
+      `style-src 'self' 'nonce-${nonce}' 'unsafe-inline'`,
+      "img-src 'self' data: blob:",
+      "connect-src 'self'",
+      "font-src 'self' data:",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+    ].join("; "),
+  };
 }
 
 function proxyToApi(req, res, url) {
@@ -126,7 +163,21 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    res.writeHead(200, { "Content-Type": contentType });
+    if (contentType === "text/html") {
+      const nonce = crypto.randomBytes(16).toString("base64");
+      const html = injectNonceIntoHtml(data.toString("utf8"), nonce);
+      res.writeHead(200, {
+        "Content-Type": `${contentType}; charset=utf-8`,
+        ...buildHtmlSecurityHeaders(nonce),
+      });
+      res.end(html);
+      return;
+    }
+
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      ...buildBaseSecurityHeaders(),
+    });
     res.end(data);
   });
 });

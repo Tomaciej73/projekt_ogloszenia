@@ -65,11 +65,42 @@
   <script>
     const API = '';
     const COOKIE_SESSION_MARKER = 'cookie-session';
+    const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+    const MAX_IMAGE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+    const MAX_IMAGE_FILE_SIZE_MB = Math.round(MAX_IMAGE_FILE_SIZE_BYTES / (1024 * 1024));
     let token = localStorage.getItem('token') || '';
+    let csrfToken = '';
 
     function getAuthHeaders(extraHeaders = {}) {
       const jwtLike = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
       return jwtLike ? { ...extraHeaders, Authorization: 'Bearer ' + token } : extraHeaders;
+    }
+
+    async function ensureCsrfToken(forceRefresh = false) {
+      if (csrfToken && !forceRefresh) return csrfToken;
+      const res = await fetch(API + '/auth/csrf', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.csrfToken) {
+        throw new Error(data.error || 'Failed to initialize the security token. Refresh the page and try again.');
+      }
+      csrfToken = data.csrfToken;
+      return csrfToken;
+    }
+
+    async function apiFetch(path, options = {}, { auth = false } = {}) {
+      const method = String(options.method || 'GET').toUpperCase();
+      let headers = { ...(options.headers || {}) };
+
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+        const tokenValue = await ensureCsrfToken();
+        headers['X-CSRF-Token'] = tokenValue;
+      }
+
+      if (auth) {
+        headers = getAuthHeaders(headers);
+      }
+
+      return fetch(API + path, { ...options, headers });
     }
 
     function toast(msg, type) {
@@ -90,6 +121,7 @@
         token = token || COOKIE_SESSION_MARKER;
         localStorage.setItem('token', COOKIE_SESSION_MARKER);
         localStorage.setItem('user', JSON.stringify(data.user));
+        await ensureCsrfToken();
       } catch {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
@@ -98,11 +130,69 @@
       }
     })();
 
+    async function validateImageFile(file) {
+      if (!(file instanceof File)) {
+        throw new Error('Invalid file.');
+      }
+      if (!ALLOWED_IMAGE_MIME_TYPES.has(file.type)) {
+        throw new Error('Only JPG, PNG, GIF, or WebP images are allowed.');
+      }
+      if (file.size < 1) {
+        throw new Error('The selected image file is empty.');
+      }
+      if (file.size > MAX_IMAGE_FILE_SIZE_BYTES) {
+        throw new Error(`Image is too large. Maximum size is ${MAX_IMAGE_FILE_SIZE_MB} MB.`);
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      try {
+        await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => {
+            if (!img.naturalWidth || !img.naturalHeight) {
+              reject(new Error('The image is corrupted or has invalid dimensions.'));
+              return;
+            }
+            resolve();
+          };
+          img.onerror = () => reject(new Error('This file is not a valid image or is corrupted.'));
+          img.src = objectUrl;
+        });
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+
+    function replaceFileInputFiles(input, files) {
+      const dataTransfer = new DataTransfer();
+      files.forEach((file) => dataTransfer.items.add(file));
+      input.files = dataTransfer.files;
+    }
+
+    async function sanitizeSelectedImages(input) {
+      const validFiles = [];
+      const rejectedMessages = [];
+
+      for (const file of Array.from(input.files || [])) {
+        try {
+          await validateImageFile(file);
+          validFiles.push(file);
+        } catch (error) {
+          rejectedMessages.push(`${file.name}: ${error.message}`);
+        }
+      }
+
+      replaceFileInputFiles(input, validFiles);
+      return { validFiles, rejectedMessages };
+    }
+
     // Photo preview on file select
-    document.getElementById('photos').addEventListener('change', function() {
+    document.getElementById('photos').addEventListener('change', async function() {
       const preview = document.getElementById('photoPreview');
       preview.innerHTML = '';
-      for (const file of this.files) {
+      const { validFiles, rejectedMessages } = await sanitizeSelectedImages(this);
+      rejectedMessages.forEach((message) => toast(message, 'error'));
+      for (const file of validFiles) {
         const img = document.createElement('img');
         img.src = URL.createObjectURL(file);
         img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.2)';
@@ -122,16 +212,20 @@
 
     // Upload a file via server-side endpoint (base64 encoded)
     async function uploadPhoto(file, listingId) {
+      await validateImageFile(file);
       const data = await readFileAsBase64(file);
       const body = { fileName: file.name, contentType: file.type, fileSize: file.size, data };
       if (listingId) body.listingId = listingId;
 
-      const res = await fetch(API + '/media/upload', {
+      const res = await apiFetch('/media/upload', {
         method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error('Failed to upload file');
+      }, { auth: true });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to upload file');
+      }
       const { publicUrl } = await res.json();
       return publicUrl;
     }
@@ -157,11 +251,11 @@
 
       try {
         // 1. Create the draft first
-        const res = await fetch(API + '/listings', {
+        const res = await apiFetch('/listings', {
           method: 'POST',
-          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
-        });
+        }, { auth: true });
 
         if (!res.ok) {
           const err = await res.json();
@@ -184,11 +278,11 @@
 
           // 3. Append photo URLs to the draft
           if (photoUrls.length > 0) {
-            await fetch(API + '/listings/' + listingId + '/photos', {
+            await apiFetch('/listings/' + listingId + '/photos', {
               method: 'POST',
-              headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ urls: photoUrls }),
-            });
+            }, { auth: true });
           }
         }
 

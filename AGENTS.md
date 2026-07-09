@@ -110,3 +110,7 @@ Access:
 - Use CSRF protection and rate limiting on auth and publication endpoints.
 - Use audit logs for account linking, publishing, updating and deleting external listings.
 - Token fields in the database must use `text` type (not `varchar(255)`).
+
+## Handoff
+
+- At the end of a completed implementation task, include an example `git commit -m "..."` message in the handoff response.
