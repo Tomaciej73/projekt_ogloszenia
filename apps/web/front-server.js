@@ -10,9 +10,14 @@ const server = http.createServer((req, res) => {
     filePath = "/index.html";
   }
 
-  // Serve the create-listing page
-  if (filePath === "/create-listing") {
-    filePath = "/create-listing.html";
+  const routeMap = {
+    "/create-listing": "/create-listing.html",
+    "/login": "/login.html",
+    "/register": "/register.html",
+  };
+
+  if (routeMap[filePath]) {
+    filePath = routeMap[filePath];
   }
 
   const fullPath = path.join(__dirname, "public", filePath);

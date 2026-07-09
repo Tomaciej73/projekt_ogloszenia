@@ -138,6 +138,7 @@ packages/config/
 - IDs use UUIDs
 - Timestamps use `@default(now())` and `@updatedAt`
 - Token fields use `TEXT`-compatible storage, not `varchar(255)`
+- `User` now includes activation and password reset state fields: `isActive`, `activatedAt`, `activationTokenHash`, `activationTokenExpiresAt`, `passwordResetCodeHash`, `passwordResetCodeExpiresAt`, `passwordResetRequestedAt`, and `passwordResetAttempts`
 
 ## Queue System
 
@@ -149,9 +150,12 @@ packages/config/
 ## Auth and Security Notes
 
 - Authentication uses JWT Bearer tokens.
+- Registration creates inactive accounts until email activation is completed.
+- Account activation links use DB-backed token hashes with 1-hour expiry.
 - Passwords use PBKDF2 + SHA512 + 100k iterations + 16-byte random salts.
 - Password reset uses SMTP-delivered 6-digit codes with 1-hour expiry.
-- Reset codes are currently stored in memory in the API process.
+- Reset codes are stored in PostgreSQL as SHA-256 hashes scoped to the user ID, with expiry, request timestamp, and invalid-attempt counter.
+- Inactive accounts can also be activated through the forgot-password reset flow after mailbox verification.
 - Verbose nodemailer transport logging is disabled in runtime to avoid leaking reset codes or SMTP session details into container logs.
 - Strong password rules are enforced on registration and password reset:
   - minimum 8 characters
@@ -166,7 +170,7 @@ packages/config/
 - Backend: Jest unit and integration tests
 - Frontend: Vitest plus Testing Library
 - E2E: Playwright
-- Current turn validation used syntax checks only; automated coverage is still pending
+- Current turn validation used syntax checks, `prisma migrate deploy`, Docker container restarts, and `curl`-driven auth flow verification; automated coverage is still pending
 
 ## Constraints
 

@@ -154,7 +154,15 @@ apps/api/src/
 
 ### 10. Password Reset Code Flow
 - `POST /auth/forgot-password` validates email format and checks that the account exists before trying to send mail.
-- The API generates a 6-digit one-time code, stores it in an in-memory map keyed by normalized email, and sets a 1-hour expiry.
-- SMTP delivery must succeed; if the mail server rejects the recipient or sending fails, the pending reset code is discarded and the request returns an error.
+- The API generates a 6-digit one-time code, stores only its SHA-256 hash in PostgreSQL on the `User` row, and records a 1-hour expiry plus request timestamp.
+- SMTP delivery must succeed; if the mail server rejects the recipient or sending fails, the pending reset state is cleared from the database and the request returns an error.
 - `POST /auth/reset-password` validates email, reset code, expiry, and strong password rules before updating the stored password hash.
-- Reset codes are single-use and removed after a successful password reset or when an expired code is detected.
+- Invalid code submissions increment `passwordResetAttempts`; after 5 failed attempts the reset state is cleared and the user must request a new code.
+- Reset codes are single-use and removed after a successful password reset or when an expired code or attempt limit is detected.
+
+### 11. Account Activation Flow
+- `POST /auth/register` creates the user immediately but keeps the account inactive until email confirmation.
+- Registration generates a random activation token, stores only its SHA-256 hash plus a 1-hour expiry in PostgreSQL, and sends the raw link token by email.
+- `GET /auth/activate?email=...&token=...` activates the account when the token hash matches and the expiry has not passed.
+- If the activation link expires, the account remains in the database as inactive and later registration attempts on the same email are rejected with guidance to use `Forgot password`.
+- `POST /auth/reset-password` also activates inactive accounts after the user proves mailbox ownership with the emailed reset code and sets a new password.

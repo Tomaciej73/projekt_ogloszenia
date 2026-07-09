@@ -8,7 +8,7 @@ const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
 const { getPresignedUploadUrl, ensureBucket, minioClient, BUCKET } = require("./minio");
-const { sendPasswordResetEmail } = require("./mail");
+const { sendPasswordResetEmail, sendAccountActivationEmail } = require("./mail");
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6739";
 const publicationQueue = new Queue("publication", { connection: { url: REDIS_URL } });
@@ -21,6 +21,11 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 const JSON_SPACES = 2;
+const RESET_EXPIRY_MS = 3600000;
+const ACTIVATION_EXPIRY_MS = 3600000;
+const MAX_RESET_ATTEMPTS = 5;
+const INACTIVE_LOGIN_MESSAGE = "Your account is not active yet. Check your email for the activation link or use Forgot password to activate your account.";
+const INACTIVE_REGISTER_MESSAGE = "An account with this email already exists but is not active. Use Forgot password to activate your account and set a new password.";
 
 function jsonResponse(res, status, data) {
   res.writeHead(status, {
@@ -30,6 +35,13 @@ function jsonResponse(res, status, data) {
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
   });
   res.end(JSON.stringify(data, null, JSON_SPACES));
+}
+
+function htmlResponse(res, status, html) {
+  res.writeHead(status, {
+    "Content-Type": "text/html; charset=utf-8",
+  });
+  res.end(html);
 }
 
 function parseBody(req) {
@@ -81,6 +93,11 @@ function validateResetCode(code) {
   return null;
 }
 
+function normalizeActivationToken(token) {
+  if (token === undefined || token === null) return "";
+  return String(token).trim();
+}
+
 function sanitize(str, maxLen) {
   if (typeof str !== "string") return "";
   let s = str.trim();
@@ -107,15 +124,89 @@ function verifyPassword(pw, stored) {
   return hash === crypto.pbkdf2Sync(pw, salt, 100000, 64, "sha512").toString("hex");
 }
 
-const resetTokens = new Map();
+function hashResetCode(userId, code) {
+  return crypto.createHash("sha256").update(`${userId}:${code}`).digest("hex");
+}
+
+function hashActivationToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
 
 function generateResetCode() {
   return crypto.randomInt(100000, 1000000).toString();
 }
 
-function isMatchingResetCode(expected, actual) {
-  if (typeof expected !== "string" || typeof actual !== "string" || expected.length !== actual.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
+function generateActivationToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function isMatchingResetCode(expectedHash, userId, actualCode) {
+  if (typeof expectedHash !== "string" || typeof userId !== "string" || typeof actualCode !== "string") return false;
+  const actualHash = hashResetCode(userId, actualCode);
+  if (expectedHash.length !== actualHash.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(expectedHash, "hex"), Buffer.from(actualHash, "hex"));
+}
+
+function isMatchingActivationToken(expectedHash, actualToken) {
+  if (typeof expectedHash !== "string" || typeof actualToken !== "string") return false;
+  const actualHash = hashActivationToken(actualToken);
+  if (expectedHash.length !== actualHash.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(expectedHash, "hex"), Buffer.from(actualHash, "hex"));
+}
+
+function getApiBaseUrl(req) {
+  const protocol = req.headers["x-forwarded-proto"] || "http";
+  return `${protocol}://${req.headers.host}`;
+}
+
+function getWebBaseUrl(req) {
+  if (process.env.WEB_PUBLIC_URL) return process.env.WEB_PUBLIC_URL.replace(/\/$/, "");
+  const protocol = req.headers["x-forwarded-proto"] || "http";
+  const hostname = (req.headers.host || `localhost:${process.env.API_PORT || 3001}`).split(":")[0];
+  return `${protocol}://${hostname}:${process.env.WEB_PORT || 3000}`;
+}
+
+function buildActivationUrl(req, email, token) {
+  const baseUrl = getApiBaseUrl(req);
+  return `${baseUrl}/auth/activate?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`;
+}
+
+function passwordResetStateClearedData() {
+  return {
+    passwordResetCodeHash: null,
+    passwordResetCodeExpiresAt: null,
+    passwordResetRequestedAt: null,
+    passwordResetAttempts: 0,
+  };
+}
+
+function renderAuthStatusPage({ title, heading, message, actionHref, actionLabel, secondaryMessage }) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; background: linear-gradient(135deg, #0f0c29, #302b63, #24243e); color: #fff; font-family: system-ui, -apple-system, sans-serif; }
+    .card { width: 100%; max-width: 520px; padding: 32px; border-radius: 20px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 18px 45px rgba(0,0,0,0.25); }
+    h1 { margin: 0 0 12px; font-size: 1.8rem; }
+    p { margin: 0 0 16px; line-height: 1.6; color: rgba(255,255,255,0.82); }
+    a.button { display: inline-block; margin-top: 8px; padding: 12px 18px; border-radius: 10px; background: linear-gradient(90deg, #e94560, #c23152); color: #fff; text-decoration: none; font-weight: 700; }
+    .muted { font-size: 0.92rem; color: rgba(255,255,255,0.6); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${title}</h1>
+    <p><strong>${heading}</strong></p>
+    <p>${message}</p>
+    ${actionHref && actionLabel ? `<a class="button" href="${actionHref}">${actionLabel}</a>` : ""}
+    ${secondaryMessage ? `<p class="muted">${secondaryMessage}</p>` : ""}
+  </div>
+</body>
+</html>`;
 }
 
 function signToken(userId) {
@@ -157,7 +248,8 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
-  const path = new URL(req.url, `http://${req.headers.host}`).pathname;
+  const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+  const path = requestUrl.pathname;
 
   try {
     // ── Auth: Register ──
@@ -174,18 +266,58 @@ const server = http.createServer(async (req, res) => {
       if (emailErr) return jsonResponse(res, 400, { error: emailErr });
       if (pwdErr) return jsonResponse(res, 400, { error: pwdErr });
 
-      if (await prisma.user.findUnique({ where: { email } }))
+      const existingUser = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, isActive: true },
+      });
+      if (existingUser) {
+        if (!existingUser.isActive) {
+          return jsonResponse(res, 409, { error: INACTIVE_REGISTER_MESSAGE });
+        }
         return jsonResponse(res, 409, { error: "User with this email already exists" });
+      }
+
+      const activationToken = generateActivationToken();
+      const activationTokenHash = hashActivationToken(activationToken);
+      const activationTokenExpiresAt = new Date(Date.now() + ACTIVATION_EXPIRY_MS);
 
       const user = await prisma.user.create({
-        data: { email, passwordHash: hashPassword(body.password), name },
+        data: {
+          email,
+          passwordHash: hashPassword(body.password),
+          name,
+          isActive: false,
+          activationTokenHash,
+          activationTokenExpiresAt,
+        },
       });
       await prisma.workspace.create({
         data: { name: `${name}'s Workspace`, slug: `ws-${user.id.slice(0, 8)}`, members: { create: { userId: user.id, role: "owner" } } },
       });
       await seedProviders();
-      const token = signToken(user.id);
-      return jsonResponse(res, 201, { user: { id: user.id, email: user.email, name: user.name }, token });
+
+      let activationEmailSent = false;
+      let message = "Account created. Check your email and activate your account using the activation link.";
+      try {
+        const activationUrl = buildActivationUrl(req, email, activationToken);
+        const mailInfo = await sendAccountActivationEmail(email, activationUrl, name);
+        activationEmailSent = !(Array.isArray(mailInfo.rejected) && mailInfo.rejected.length > 0);
+        if (!activationEmailSent) {
+          message = 'Account created, but the activation email was rejected. Use "Forgot password" to activate your account.';
+        } else {
+          console.log(`Account activation email sent to ${email}`);
+        }
+      } catch (mailErr) {
+        message = 'Account created, but the activation email could not be sent. Use "Forgot password" to activate your account.';
+        console.error("Failed to send activation email:", mailErr.message);
+      }
+
+      return jsonResponse(res, 201, {
+        message,
+        requiresActivation: true,
+        activationEmailSent,
+        email,
+      });
     }
 
     // ── Auth: Login ──
@@ -200,6 +332,7 @@ const server = http.createServer(async (req, res) => {
 
       const user = await prisma.user.findUnique({ where: { email } });
       if (!user) return jsonResponse(res, 401, { error: "Invalid email or password" });
+      if (!user.isActive) return jsonResponse(res, 403, { error: INACTIVE_LOGIN_MESSAGE });
 
       const pwdOk = verifyPassword(body.password, user.passwordHash);
       if (!pwdOk) return jsonResponse(res, 401, { error: "Invalid email or password" });
@@ -210,6 +343,106 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ── Auth: Forgot Password ──
+    if (path === "/auth/activate" && req.method === "GET") {
+      const email = sanitize(requestUrl.searchParams.get("email"), 254).toLowerCase();
+      const token = normalizeActivationToken(requestUrl.searchParams.get("token"));
+      const appUrl = `${getWebBaseUrl(req)}/`;
+
+      if (!email || !token) {
+        return htmlResponse(res, 400, renderAuthStatusPage({
+          title: "Invalid Activation Link",
+          heading: "We could not verify your account.",
+          message: 'This activation link is incomplete. Open MultiPortal and use "Forgot password" to activate your account.',
+          actionHref: appUrl,
+          actionLabel: "Open MultiPortal",
+          secondaryMessage: 'If the original link expired, use "Forgot password" with the same email address.',
+        }));
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: {
+          id: true,
+          isActive: true,
+          activationTokenHash: true,
+          activationTokenExpiresAt: true,
+        },
+      });
+
+      if (!user) {
+        return htmlResponse(res, 404, renderAuthStatusPage({
+          title: "Account Not Found",
+          heading: "This activation link does not match any account.",
+          message: "No account was found for this activation link.",
+          actionHref: appUrl,
+          actionLabel: "Open MultiPortal",
+          secondaryMessage: 'If you already registered, try "Forgot password" to activate your account.',
+        }));
+      }
+
+      if (user.isActive) {
+        return htmlResponse(res, 200, renderAuthStatusPage({
+          title: "Account Already Active",
+          heading: "Your account is already confirmed.",
+          message: "You can log in to MultiPortal now.",
+          actionHref: appUrl,
+          actionLabel: "Go to Login",
+        }));
+      }
+
+      if (!user.activationTokenHash || !user.activationTokenExpiresAt) {
+        return htmlResponse(res, 400, renderAuthStatusPage({
+          title: "Activation Link Invalid",
+          heading: "This activation link is no longer valid.",
+          message: 'Use "Forgot password" with the same email address to activate your account and set a new password.',
+          actionHref: appUrl,
+          actionLabel: "Open MultiPortal",
+        }));
+      }
+
+      if (Date.now() > user.activationTokenExpiresAt.getTime()) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { activationTokenHash: null, activationTokenExpiresAt: null },
+        });
+        return htmlResponse(res, 400, renderAuthStatusPage({
+          title: "Activation Link Expired",
+          heading: "This activation link has expired.",
+          message: 'Use "Forgot password" with the same email address to activate your account and set a new password.',
+          actionHref: appUrl,
+          actionLabel: "Open MultiPortal",
+        }));
+      }
+
+      if (!isMatchingActivationToken(user.activationTokenHash, token)) {
+        return htmlResponse(res, 400, renderAuthStatusPage({
+          title: "Activation Link Invalid",
+          heading: "We could not verify this activation request.",
+          message: 'Use "Forgot password" with the same email address to activate your account and set a new password.',
+          actionHref: appUrl,
+          actionLabel: "Open MultiPortal",
+        }));
+      }
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          isActive: true,
+          activatedAt: new Date(),
+          activationTokenHash: null,
+          activationTokenExpiresAt: null,
+        },
+      });
+
+      return htmlResponse(res, 200, renderAuthStatusPage({
+        title: "Account Activated",
+        heading: "Your account is now active.",
+        message: "You can log in to MultiPortal with the password you chose during registration.",
+        actionHref: appUrl,
+        actionLabel: "Go to Login",
+      }));
+    }
+
     if (path === "/auth/forgot-password" && req.method === "POST") {
       const body = await parseBody(req).catch(() => null);
       if (!body) return jsonResponse(res, 400, { error: "Invalid JSON" });
@@ -218,27 +451,49 @@ const server = http.createServer(async (req, res) => {
       const emailErr = validateEmail(email);
       if (emailErr) return jsonResponse(res, 400, { error: emailErr });
 
-      const user = await prisma.user.findUnique({ where: { email } });
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, name: true, isActive: true },
+      });
       if (!user) return jsonResponse(res, 404, { error: "No account found for this email address." });
 
       const resetCode = generateResetCode();
-      resetTokens.set(email, { token: resetCode, expires: Date.now() + 3600000 }); // 1 hour
+      const passwordResetCodeExpiresAt = new Date(Date.now() + RESET_EXPIRY_MS);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordResetCodeHash: hashResetCode(user.id, resetCode),
+          passwordResetCodeExpiresAt,
+          passwordResetRequestedAt: new Date(),
+          passwordResetAttempts: 0,
+        },
+      });
 
       // Send password reset email via SMTP
       try {
-        const mailInfo = await sendPasswordResetEmail(email, resetCode, user.name);
+        const mailInfo = await sendPasswordResetEmail(email, resetCode, user.name, !user.isActive);
         if (Array.isArray(mailInfo.rejected) && mailInfo.rejected.length > 0) {
-          resetTokens.delete(email);
+          await prisma.user.update({
+            where: { id: user.id },
+            data: passwordResetStateClearedData(),
+          });
           return jsonResponse(res, 502, { error: "Reset email was rejected by the mail server. Please verify the address and try again." });
         }
         console.log(`Password reset email sent to ${email}`);
       } catch (mailErr) {
-        resetTokens.delete(email);
+        await prisma.user.update({
+          where: { id: user.id },
+          data: passwordResetStateClearedData(),
+        });
         console.error("Failed to send reset email:", mailErr.message);
         return jsonResponse(res, 502, { error: "Failed to send reset email. Please try again later." });
       }
 
-      return jsonResponse(res, 200, { message: "Reset code sent. Check your email for the 6-digit code." });
+      return jsonResponse(res, 200, {
+        message: user.isActive
+          ? "Reset code sent. Check your email for the 6-digit code."
+          : "Activation code sent. Check your email for the 6-digit code and set a new password to activate your account.",
+      });
     }
 
     // ── Auth: Reset Password ──
@@ -257,28 +512,65 @@ const server = http.createServer(async (req, res) => {
 
       const user = await prisma.user.findUnique({
         where: { email },
-        select: { id: true },
+        select: {
+          id: true,
+          isActive: true,
+          passwordResetCodeHash: true,
+          passwordResetCodeExpiresAt: true,
+          passwordResetAttempts: true,
+        },
       });
       if (!user) return jsonResponse(res, 404, { error: "No account found for this email address." });
 
-      const entry = resetTokens.get(email);
-      if (!entry) {
+      if (!user.passwordResetCodeHash || !user.passwordResetCodeExpiresAt) {
         return jsonResponse(res, 400, { error: "Reset code not found. Request a new code and try again." });
       }
-      if (Date.now() > entry.expires) {
-        resetTokens.delete(email);
+      if (Date.now() > user.passwordResetCodeExpiresAt.getTime()) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: passwordResetStateClearedData(),
+        });
         return jsonResponse(res, 400, { error: "Reset code has expired. Request a new code and try again." });
       }
-      if (!isMatchingResetCode(entry.token, resetCode)) {
+      if ((user.passwordResetAttempts ?? 0) >= MAX_RESET_ATTEMPTS) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: passwordResetStateClearedData(),
+        });
+        return jsonResponse(res, 400, { error: "Too many invalid reset code attempts. Request a new code and try again." });
+      }
+      if (!isMatchingResetCode(user.passwordResetCodeHash, user.id, resetCode)) {
+        const nextResetAttempts = (user.passwordResetAttempts ?? 0) + 1;
+        if (nextResetAttempts >= MAX_RESET_ATTEMPTS) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: passwordResetStateClearedData(),
+          });
+          return jsonResponse(res, 400, { error: "Too many invalid reset code attempts. Request a new code and try again." });
+        }
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { passwordResetAttempts: nextResetAttempts },
+        });
         return jsonResponse(res, 400, { error: "Invalid reset code." });
       }
 
       await prisma.user.update({
         where: { email },
-        data: { passwordHash: hashPassword(body.password) },
+        data: {
+          passwordHash: hashPassword(body.password),
+          isActive: true,
+          activationTokenHash: null,
+          activationTokenExpiresAt: null,
+          ...passwordResetStateClearedData(),
+          ...(user.isActive ? {} : { activatedAt: new Date() }),
+        },
       });
-      resetTokens.delete(email);
-      return jsonResponse(res, 200, { message: "Password has been reset. You can now log in with the new password." });
+      return jsonResponse(res, 200, {
+        message: user.isActive
+          ? "Password has been reset. You can now log in with the new password."
+          : "Your account has been activated and your password has been updated. You can now log in.",
+      });
     }
 
     // ── Auth: Me ──

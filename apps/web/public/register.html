@@ -34,6 +34,7 @@
       <label>Password</label>
       <input type="password" id="password" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,128}" title="Use at least 8 characters with uppercase, lowercase, number, and special character." placeholder="Min. 8 characters, uppercase, lowercase, number, special character" autocomplete="new-password">
       <p style="color:#666;margin:-0.5rem 0 1rem;font-size:0.85rem">Use at least 8 characters with uppercase, lowercase, number, and special character.</p>
+      <p style="color:#666;margin:-0.5rem 0 1rem;font-size:0.85rem">After registration, activate your account using the email link we send you.</p>
       <button type="submit" id="submitBtn">Create Account</button>
     </form>
     <div id="result" class="result"></div>
@@ -82,9 +83,11 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Registration failed');
 
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify({ id: data.userId, name: data.name, email: data.email }));
-        window.location.href = '/';
+        result.className = data.activationEmailSent === false ? 'result error' : 'result success';
+        result.textContent = data.message || 'Account created. Check your email to activate your account.';
+        document.getElementById('name').value = '';
+        document.getElementById('email').value = '';
+        document.getElementById('password').value = '';
       } catch (error) {
         result.className = 'result error';
         result.textContent = error.message;

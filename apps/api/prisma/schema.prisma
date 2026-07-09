@@ -51,12 +51,20 @@ enum IntegrationStatus {
 // ============================================================
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  passwordHash String
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                       String   @id @default(uuid())
+  email                    String   @unique
+  passwordHash             String
+  isActive                 Boolean  @default(false)
+  activatedAt              DateTime?
+  activationTokenHash      String?  @db.Text
+  activationTokenExpiresAt DateTime?
+  passwordResetCodeHash      String?  @db.Text
+  passwordResetCodeExpiresAt DateTime?
+  passwordResetRequestedAt   DateTime?
+  passwordResetAttempts      Int      @default(0)
+  name                       String?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
 
   workspaces        WorkspaceMember[]
   marketplaceAccounts MarketplaceAccount[]

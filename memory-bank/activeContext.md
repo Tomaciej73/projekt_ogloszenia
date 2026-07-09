@@ -3,7 +3,7 @@
 ## Current Phase
 **Phase 8 - Provider Research and Auth Hardening** (in progress)
 
-A fully working application is running: user registration/login with JWT Bearer auth and PBKDF2+SHA512 password hashing, password reset flow with SMTP-delivered 6-digit codes, listing draft CRUD stored in PostgreSQL via Prisma, publication job creation with BullMQ, and a web frontend dashboard. Docker Compose includes PostgreSQL 18, Redis 8, MinIO, and optional API+Web containers (`profile: full`).
+A fully working application is running: user registration/login with JWT Bearer auth and PBKDF2+SHA512 password hashing, account activation via expiring email links, password reset flow with SMTP-delivered 6-digit codes, listing draft CRUD stored in PostgreSQL via Prisma, publication job creation with BullMQ, and a web frontend dashboard. Docker Compose includes PostgreSQL 18, Redis 8, MinIO, and optional API+Web containers (`profile: full`).
 
 ## Active Decisions
 
@@ -14,16 +14,16 @@ A fully working application is running: user registration/login with JWT Bearer 
 - **Version policy:** Latest LTS for runtimes, latest stable for frameworks, no `latest` Docker tags, verify from official sources.
 - **Pinned package manager:** pnpm@11.10.0
 - **Workspace protocol:** `workspace:*` for inter-package dependencies
-- **Security:** All credentials from `.env` via dotenv. No hardcoded secrets in source code. PBKDF2+SHA512+16B salt for passwords. JWT Bearer auth. Password reset requires a registered email, a one-time 6-digit code, and a strong password (uppercase, lowercase, number, special character).
+- **Security:** All credentials from `.env` via dotenv. No hardcoded secrets in source code. PBKDF2+SHA512+16B salt for passwords. JWT Bearer auth. New accounts are inactive until activated by email link or by the forgot-password activation flow. Password reset requires a registered email, a one-time 6-digit code whose SHA-256 hash is stored in PostgreSQL, and a strong password (uppercase, lowercase, number, special character).
 - **Owner's changes are authoritative:** Port numbers, configuration values, file names chosen by the project owner must not be reverted or "corrected" by AI. See `.clinerules/01-project.md`.
 - **Current port assignments (from `.env`):** PostgreSQL 5243, Redis 6739, MinIO API 9000, MinIO Console 9001, API 3001, Web 3000.
 
 ## Immediate Next Steps
 
 1. Add rate limiting and resend throttling for `/auth/*` and password reset endpoints.
-2. Persist password reset codes outside process memory (DB/Redis) so API restarts do not invalidate pending resets.
+2. Add E2E coverage for activation, forgot-password, and restart persistence scenarios.
 3. Implement provider connector interface with real OLX research.
-4. Add E2E tests for the main auth, listing, and publication flows.
+4. Add E2E tests for the main listing and publication flows.
 
 ## Known Unknowns
 
@@ -34,8 +34,10 @@ A fully working application is running: user registration/login with JWT Bearer 
 
 ## Recent Changes
 
+- 2026-07-09: Added account activation flow - registration now creates inactive accounts, sends a 1-hour activation link by email, blocks login until activation, and allows inactive accounts to be activated through the forgot-password reset flow.
+- 2026-07-09: Password reset codes now persist in PostgreSQL as SHA-256 hashes with expiry, request timestamp, and attempt counter, so API restarts no longer invalidate pending resets.
 - 2026-07-09: Disabled verbose nodemailer transport logging after container verification showed SMTP debug output exposed reset codes and mail transport details in `docker logs`.
-- 2026-07-09: Password reset flow hardened - forgot-password now checks for an existing account, sends a 6-digit code via SMTP, verifies the code on reset, and enforces stronger password rules on registration/reset forms.
+- 2026-07-09: Password reset flow hardened - forgot-password now checks for an existing account, sends a 6-digit code via SMTP, verifies the code on reset, persists reset state in the database, and enforces stronger password rules on registration/reset forms.
 - 2026-07-08: Fixed DELETE 500 - foreign key RESTRICT on `ListingMedia` blocked deletion. Now deletes related media records first.
 - 2026-07-08: Switched photo upload from presigned URL (broken by hostname mismatch in AWS signature) to server-side base64 upload via `POST /media/upload`.
 - 2026-07-08: Full photo management CRUD - added `POST/PUT/DELETE /listings/:id/photos` endpoints. Edit modal has drag-reorder grid, delete, set primary, add. Detail modal shows gallery. Create flow: draft first, then upload photos.
