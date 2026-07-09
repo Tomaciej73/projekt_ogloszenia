@@ -87,6 +87,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - NestJS source code exists but is not used at runtime (plain Node.js servers are active instead).
 - 2 build scripts remain blocked (`msgpackr-extract`, `sharp`) - needed for Next.js builds, not blocking current development.
 - Auth endpoints still need rate limiting and resend throttling.
+- Manual security review is still in progress; remaining follow-up includes ownership checks on some write paths and frontend hardening against XSS via user-controlled media URLs.
 - Real inbox delivery still depends on a verified `SMTP_FROM` sender and aligned SPF/DKIM/DMARC for the chosen SMTP relay.
 
 ## Current Port Assignments (from `.env`)
@@ -122,3 +123,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-09 | Listing photos now use same-origin `/media-files/...` URLs with legacy URL normalization | Fixes broken thumbnails when old records or runtime config still pointed at direct MinIO or localhost hosts |
 | 2026-07-09 | SMTP startup verify and accepted/rejected logging added | Makes VPS mail troubleshooting clearer and fails faster when the relay is unreachable or slow |
 | 2026-07-09 | Mailer now supports implicit TLS on port 465 via `SMTP_SECURE` | Allows switching from STARTTLS relays to SSL/TLS SMTP hosts without code changes |
+| 2026-07-09 | Listing and publication-job reads by ID now require owner auth | Prevents cross-user data exposure through guessed UUIDs on `GET /listings/:id` and `GET /publication-jobs/:id` |
+| 2026-07-09 | Publication-job creation now verifies listing ownership | Prevents authenticated users from enqueueing publication work for another user's `listingId` |
+| 2026-07-09 | Publication-job creation now reuses the provider-specific `ExternalListing` row | Fixes `P2002` on repeated publish attempts for the same draft/provider while still allowing new `PublicationJob` records |
+| 2026-07-09 | Docker SMTP env now passes `SMTP_SECURE`, and sender config aligns with `noreply@multiportal.site` | Ensures recreated API containers use the intended Home.pl SSL mailbox config and improves inbox acceptance |

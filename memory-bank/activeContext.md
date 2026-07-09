@@ -35,6 +35,10 @@ A fully working application is running: user registration/login with JWT Bearer 
 
 ## Recent Changes
 
+- 2026-07-09: Hardened `POST /publication-jobs` so the submitted `listingId` must belong to the authenticated user before creating `ExternalListing` / `PublicationJob` rows or enqueueing publish work.
+- 2026-07-09: Fixed duplicate-publication `P2002` errors by reusing the unique `(listingDraftId, marketplaceProviderId)` `ExternalListing` row during `POST /publication-jobs` and creating a new `PublicationJob` inside the same transaction.
+- 2026-07-09: Hardened object-by-ID reads so `GET /listings/:id` and `GET /publication-jobs/:id` now require authentication plus owner matching, closing an ID-enumeration data leak in the active Node.js runtime.
+- 2026-07-09: Aligned runtime SMTP sender settings with the real `noreply@multiportal.site` mailbox, passed `SMTP_SECURE` / `SMTP_REQUIRE_TLS` through Docker Compose, and confirmed password-reset delivery is accepted by the Home.pl relay on `poczta2602650.home.pl:465`.
 - 2026-07-09: Fixed broken listing thumbnails behind public domains by adding a same-origin `/media-files/...` proxy in `apps/web/front-server.js`, returning media URLs through the web origin, and normalizing legacy direct-MinIO / `localhost:9000` photo URLs in API listing responses.
 - 2026-07-09: Added SMTP transport mode selection in `apps/api/mail.js` via `SMTP_SECURE` with automatic SSL mode on port `465`, so the app can use either STARTTLS on `587` or implicit TLS on `465`.
 - 2026-07-09: Added SMTP startup verification, shorter SMTP timeouts, and delivery-result logging (`messageId`, `accepted`, `rejected`, `response`) so deployed containers can distinguish relay acceptance from later inbox delivery problems.

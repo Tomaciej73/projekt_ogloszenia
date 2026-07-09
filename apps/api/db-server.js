@@ -805,7 +805,8 @@ const server = http.createServer(async (req, res) => {
       const id = listingMatch[1];
       const uid = getUserId(req);
       if (req.method === "GET") {
-        const listing = await prisma.listingDraft.findUnique({ where: { id } });
+        if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
+        const listing = await prisma.listingDraft.findFirst({ where: { id, userId: uid } });
         return listing
           ? jsonResponse(res, 200, { listing: normalizeListingResponse(req, listing) })
           : jsonResponse(res, 404, { error: "Listing not found" });
@@ -872,21 +873,45 @@ const server = http.createServer(async (req, res) => {
       if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
       const body = await parseBody(req).catch(() => null);
       if (!body) return jsonResponse(res, 400, { error: "Invalid JSON" });
+      if (!body.listingId || typeof body.listingId !== "string") {
+        return jsonResponse(res, 400, { error: "listingId is required." });
+      }
+      const draft = await prisma.listingDraft.findFirst({ where: { id: body.listingId, userId: uid } });
+      if (!draft) return jsonResponse(res, 404, { error: "Listing not found" });
       const account = await prisma.marketplaceAccount.findFirst({ where: { userId: uid }, include: { marketplaceProvider: true } });
       if (!account) return jsonResponse(res, 400, { error: "No connected marketplace account." });
-      const extListing = await prisma.externalListing.create({
-        data: { listingDraftId: body.listingId, marketplaceProviderId: account.marketplaceProviderId, marketplaceAccountId: account.id, status: "queued" },
-      });
       const key = crypto.randomUUID();
-      const job = await prisma.publicationJob.create({
-        data: { idempotencyKey: key, listingDraftId: body.listingId, marketplaceAccountId: account.id, externalListingId: extListing.id, status: "pending" },
+      const { extListing, job } = await prisma.$transaction(async (tx) => {
+        const extListing = await tx.externalListing.upsert({
+          where: {
+            listingDraftId_marketplaceProviderId: {
+              listingDraftId: draft.id,
+              marketplaceProviderId: account.marketplaceProviderId,
+            },
+          },
+          update: {
+            marketplaceAccountId: account.id,
+            status: "queued",
+          },
+          create: {
+            listingDraftId: draft.id,
+            marketplaceProviderId: account.marketplaceProviderId,
+            marketplaceAccountId: account.id,
+            status: "queued",
+          },
+        });
+
+        const job = await tx.publicationJob.create({
+          data: { idempotencyKey: key, listingDraftId: draft.id, marketplaceAccountId: account.id, externalListingId: extListing.id, status: "pending" },
+        });
+
+        return { extListing, job };
       });
 
       // Push to BullMQ queue instead of setTimeout — worker will process async
-      const draft = await prisma.listingDraft.findUnique({ where: { id: body.listingId } });
       await publicationQueue.add("publish", {
         jobId: job.id,
-        listingId: body.listingId,
+        listingId: draft.id,
         accountId: account.id,
         extListingId: extListing.id,
         draft: draft ? { title: draft.title, description: draft.description, price: Number(draft.price), currency: draft.currency, category: draft.category } : null,
@@ -897,7 +922,15 @@ const server = http.createServer(async (req, res) => {
 
     const jobMatch = path.match(/^\/publication-jobs\/([^/]+)$/);
     if (jobMatch && req.method === "GET") {
-      const job = await prisma.publicationJob.findUnique({ where: { id: jobMatch[1] }, include: { externalListing: true } });
+      const uid = getUserId(req);
+      if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
+      const job = await prisma.publicationJob.findFirst({
+        where: {
+          id: jobMatch[1],
+          listingDraft: { userId: uid },
+        },
+        include: { externalListing: true },
+      });
       return job ? jsonResponse(res, 200, { job }) : jsonResponse(res, 404, { error: "Job not found" });
     }
 
