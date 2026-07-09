@@ -175,6 +175,13 @@
     const API = '';
     const PASSWORD_RULES = 'Use at least 8 characters with uppercase, lowercase, number, and special character.';
     const PHOTO_FALLBACK_DATA_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ctext y='20' x='8' font-size='12'%3E%F0%9F%96%BC%3C/text%3E%3C/svg%3E";
+    const COOKIE_SESSION_MARKER = 'cookie-session';
+
+    function getAuthHeaders(extraHeaders = {}) {
+      const token = localStorage.getItem('token') || '';
+      const jwtLike = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
+      return jwtLike ? { ...extraHeaders, Authorization: 'Bearer ' + token } : extraHeaders;
+    }
 
     // ── TOAST ──
     function toast(msg, type) {
@@ -258,7 +265,7 @@
           throw new Error(data.error || 'Login failed');
         }
         setLoginAttemptsHint('');
-        localStorage.setItem('token', data.token);
+        localStorage.setItem('token', COOKIE_SESSION_MARKER);
         localStorage.setItem('user', JSON.stringify(data.user));
         showDashboard(data.user);
         toast('Welcome back, ' + data.user.name + '!', 'success');
@@ -294,7 +301,12 @@
       finally { btn.disabled = false; btn.textContent = 'Create Account'; }
     }
 
-    function handleLogout() {
+    async function handleLogout() {
+      try {
+        await fetch(API + '/auth/logout', { method: 'POST' });
+      } catch {
+        // Best-effort cookie cleanup; local state is still cleared below.
+      }
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       document.getElementById('loggedOutView').style.display = 'block';
@@ -373,7 +385,7 @@
       const token = localStorage.getItem('token');
       if (!token) return;
       try {
-        const res = await fetch(API + '/listings', { headers: { 'Authorization': 'Bearer ' + token } });
+        const res = await fetch(API + '/listings', { headers: getAuthHeaders() });
         const data = await res.json();
         document.getElementById('listingCount').textContent = (data.listings || []).length;
         const list = document.getElementById('listingsList');
@@ -407,7 +419,7 @@
     async function showDetail(id) {
       return showDetailSafe(id);
       const token = localStorage.getItem('token');
-      const res = await fetch(API + '/listings/' + id, { headers: { 'Authorization': 'Bearer ' + token } });
+      const res = await fetch(API + '/listings/' + id, { headers: getAuthHeaders() });
       const data = await res.json();
       const l = data.listing || data;
       const photos = l.photoUrls || [];
@@ -461,7 +473,7 @@
       const body = { fileName: file.name, contentType: file.type, fileSize: file.size, data, listingId };
       const res = await fetch(API + '/media/upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error('Failed to upload file');
@@ -471,7 +483,7 @@
 
     async function refreshPhotoGrid(listingId) {
       const token = localStorage.getItem('token');
-      const res = await fetch(API + '/listings/' + listingId, { headers: { 'Authorization': 'Bearer ' + token } });
+      const res = await fetch(API + '/listings/' + listingId, { headers: getAuthHeaders() });
       const data = await res.json();
       const l = data.listing || data;
       buildPhotoGrid(listingId, l.photoUrls || []);
@@ -507,7 +519,7 @@
       try {
         const res = await fetch(API + '/listings/' + listingId + '/photos/' + index, {
           method: 'DELETE',
-          headers: { 'Authorization': 'Bearer ' + token },
+          headers: getAuthHeaders(),
         });
         if (!res.ok) throw new Error((await res.json()).error || 'Delete failed');
         refreshPhotoGrid(listingId);
@@ -518,7 +530,7 @@
       const token = localStorage.getItem('token');
       try {
         // Fetch current photos
-        const r1 = await fetch(API + '/listings/' + listingId, { headers: { 'Authorization': 'Bearer ' + token } });
+        const r1 = await fetch(API + '/listings/' + listingId, { headers: getAuthHeaders() });
         const d1 = await r1.json();
         const l = d1.listing || d1;
         const photos = [...(l.photoUrls || [])];
@@ -529,7 +541,7 @@
         // Save reordered
         const res = await fetch(API + '/listings/' + listingId + '/photos', {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ urls: photos }),
         });
         if (!res.ok) throw new Error((await res.json()).error || 'Reorder failed');
@@ -553,7 +565,7 @@
 
       const token = localStorage.getItem('token');
       try {
-        const r1 = await fetch(API + '/listings/' + listingId, { headers: { 'Authorization': 'Bearer ' + token } });
+        const r1 = await fetch(API + '/listings/' + listingId, { headers: getAuthHeaders() });
         const d1 = await r1.json();
         const l = d1.listing || d1;
         const photos = [...(l.photoUrls || [])];
@@ -561,7 +573,7 @@
         photos.splice(targetIndex, 0, moved);
         const res = await fetch(API + '/listings/' + listingId + '/photos', {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ urls: photos }),
         });
         if (!res.ok) throw new Error((await res.json()).error || 'Reorder failed');
@@ -588,7 +600,7 @@
         const token = localStorage.getItem('token');
         await fetch(API + '/listings/' + listingId + '/photos', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ urls }),
         });
         refreshPhotoGrid(listingId);
@@ -601,7 +613,7 @@
       document.getElementById('detailModal').classList.remove('active');
       document.getElementById('editModal').classList.add('active');
       const token = localStorage.getItem('token');
-      fetch(API + '/listings/' + id, { headers: { 'Authorization': 'Bearer ' + token } })
+      fetch(API + '/listings/' + id, { headers: getAuthHeaders() })
         .then(r => r.json())
         .then(data => {
           const l = data.listing || data;
@@ -657,7 +669,7 @@
       try {
         const res = await fetch(API + '/listings/' + id, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error((await res.json()).error || 'Update failed');
@@ -673,7 +685,7 @@
       try {
         const res = await fetch(API + '/listings/' + id, {
           method: 'DELETE',
-          headers: { 'Authorization': 'Bearer ' + token },
+          headers: getAuthHeaders(),
         });
         if (!res.ok) throw new Error((await res.json()).error || 'Delete failed');
         toast('Listing deleted.', 'warning');
@@ -743,7 +755,7 @@
       const token = localStorage.getItem('token');
       if (!token) return;
       try {
-        const res = await fetch(API + '/listings', { headers: { 'Authorization': 'Bearer ' + token } });
+        const res = await fetch(API + '/listings', { headers: getAuthHeaders() });
         const data = await res.json();
         document.getElementById('listingCount').textContent = (data.listings || []).length;
         const list = document.getElementById('listingsList');
@@ -823,7 +835,7 @@
 
     async function showDetailSafe(id) {
       const token = localStorage.getItem('token');
-      const res = await fetch(API + '/listings/' + id, { headers: { 'Authorization': 'Bearer ' + token } });
+      const res = await fetch(API + '/listings/' + id, { headers: getAuthHeaders() });
       const data = await res.json();
       const l = data.listing || data;
       const photos = Array.isArray(l.photoUrls) ? l.photoUrls : [];
@@ -959,16 +971,29 @@
     function escapeHtml(str) { const d = document.createElement('div'); d.textContent = str||''; return d.innerHTML; }
 
     // ── INIT ──
-    const saved = localStorage.getItem('user');
-    if (saved) {
+    (async () => {
+      const saved = localStorage.getItem('user');
+      if (saved) {
+        try {
+          JSON.parse(saved);
+        } catch {
+          localStorage.removeItem('user');
+        }
+      }
+
       try {
-        showDashboard(JSON.parse(saved));
+        const res = await fetch(API + '/auth/me');
+        if (!res.ok) throw new Error('Not authenticated');
+        const data = await res.json();
+        localStorage.setItem('token', COOKIE_SESSION_MARKER);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        showDashboard(data.user);
       } catch {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
         document.getElementById('loggedOutView').style.display = 'block';
       }
-    } else {
-      document.getElementById('loggedOutView').style.display = 'block';
-    }
+    })();
   </script>
 </body>
 </html>

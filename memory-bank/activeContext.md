@@ -3,7 +3,7 @@
 ## Current Phase
 **Phase 8 - Provider Research and Auth Hardening** (in progress)
 
-A fully working application is running: user registration/login with JWT Bearer auth and PBKDF2+SHA512 password hashing, account activation via expiring email links, DB-backed login lockout after repeated failures, password reset flow with SMTP-delivered 6-digit codes, listing draft CRUD stored in PostgreSQL via Prisma, publication job creation with BullMQ, and a web frontend dashboard. The web runtime now proxies API routes so browser clients can use the same origin instead of hardcoded `localhost` API URLs. Docker Compose includes PostgreSQL 18, Redis 8, MinIO, and optional API+Web containers (`profile: full`).
+A fully working application is running: user registration/login with HttpOnly cookie auth backed by JWT signing plus PBKDF2+SHA512 password hashing, account activation via expiring email links, DB-backed login lockout after repeated failures, password reset flow with SMTP-delivered 6-digit codes, listing draft CRUD stored in PostgreSQL via Prisma, publication job creation with BullMQ, and a web frontend dashboard. The web runtime now proxies API routes so browser clients can use the same origin instead of hardcoded `localhost` API URLs. Docker Compose includes PostgreSQL 18, Redis 8, MinIO, and optional API+Web containers (`profile: full`).
 
 ## Active Decisions
 
@@ -14,7 +14,7 @@ A fully working application is running: user registration/login with JWT Bearer 
 - **Version policy:** Latest LTS for runtimes, latest stable for frameworks, no `latest` Docker tags, verify from official sources.
 - **Pinned package manager:** pnpm@11.10.0
 - **Workspace protocol:** `workspace:*` for inter-package dependencies
-- **Security:** All credentials from `.env` via dotenv. No hardcoded secrets in source code. PBKDF2+SHA512+16B salt for passwords. JWT Bearer auth. New accounts are inactive until activated by email link or by the forgot-password activation flow. Accounts lock after 5 failed login attempts and are unlocked only by completing the password reset flow. Password reset requires a registered email, a one-time 6-digit code whose SHA-256 hash is stored in PostgreSQL, and a strong password (uppercase, lowercase, number, special character).
+- **Security:** All credentials from `.env` via dotenv. No hardcoded secrets in source code. PBKDF2+SHA512+16B salt for passwords. Browser auth now uses an HttpOnly same-site cookie carrying the signed JWT instead of storing the JWT in `localStorage`. New accounts are inactive until activated by email link or by the forgot-password activation flow. Accounts lock after 5 failed login attempts and are unlocked only by completing the password reset flow. Password reset requires a registered email, a one-time 6-digit code whose SHA-256 hash is stored in PostgreSQL, and a strong password (uppercase, lowercase, number, special character).
 - **Mail deliverability constraint:** The SMTP relay currently accepts messages, and runtime config now points to `noreply@manager.multiportal.site`, but real inbox delivery to providers like Gmail/Onet still depends on that mailbox actually existing on the relay plus aligned SPF/DKIM/DMARC.
 - **Owner's changes are authoritative:** Port numbers, configuration values, file names chosen by the project owner must not be reverted or "corrected" by AI. See `.clinerules/01-project.md`.
 - **Current port assignments (from `.env`):** PostgreSQL 5243, Redis 6739, MinIO API 9000, MinIO Console 9001, API 3001, Web 3000.
@@ -35,6 +35,7 @@ A fully working application is running: user registration/login with JWT Bearer 
 
 ## Recent Changes
 
+- 2026-07-09: Moved browser auth off JWT-in-`localStorage` and onto an HttpOnly `mp_auth` cookie, added `POST /auth/logout`, updated the frontend to use same-origin cookie sessions, and verified login/logout plus authenticated listing reads through `curl`.
 - 2026-07-09: Closed the stored-XSS path in listing photos by validating `photoUrls` against uploaded media paths in the API, filtering legacy invalid values out of listing responses, and rendering dashboard/detail/photo thumbnails plus fullscreen previews through DOM APIs instead of URL interpolation / `document.write`.
 - 2026-07-09: Hardened `POST /publication-jobs` so the submitted `listingId` must belong to the authenticated user before creating `ExternalListing` / `PublicationJob` rows or enqueueing publish work.
 - 2026-07-09: Fixed duplicate-publication `P2002` errors by reusing the unique `(listingDraftId, marketplaceProviderId)` `ExternalListing` row during `POST /publication-jobs` and creating a new `PublicationJob` inside the same transaction.

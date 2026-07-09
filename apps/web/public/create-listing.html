@@ -64,6 +64,13 @@
 
   <script>
     const API = '';
+    const COOKIE_SESSION_MARKER = 'cookie-session';
+    let token = localStorage.getItem('token') || '';
+
+    function getAuthHeaders(extraHeaders = {}) {
+      const jwtLike = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
+      return jwtLike ? { ...extraHeaders, Authorization: 'Bearer ' + token } : extraHeaders;
+    }
 
     function toast(msg, type) {
       const c = document.getElementById('toastContainer');
@@ -75,11 +82,21 @@
     }
 
     // Check auth on page load
-    const token = localStorage.getItem('token');
-    if (!token) {
-      toast('Please log in first. Redirecting...', 'warning');
-      setTimeout(() => { window.location.href = '/'; }, 1500);
-    }
+    (async () => {
+      try {
+        const res = await fetch(API + '/auth/me');
+        if (!res.ok) throw new Error('Not authenticated');
+        const data = await res.json();
+        token = token || COOKIE_SESSION_MARKER;
+        localStorage.setItem('token', COOKIE_SESSION_MARKER);
+        localStorage.setItem('user', JSON.stringify(data.user));
+      } catch {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        toast('Please log in first. Redirecting...', 'warning');
+        setTimeout(() => { window.location.href = '/'; }, 1500);
+      }
+    })();
 
     // Photo preview on file select
     document.getElementById('photos').addEventListener('change', function() {
@@ -111,7 +128,7 @@
 
       const res = await fetch(API + '/media/upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error('Failed to upload file');
@@ -123,7 +140,7 @@
       e.preventDefault();
       const btn = document.getElementById('submitBtn');
 
-      if (!token) {
+      if (!localStorage.getItem('token')) {
         window.location.href = '/';
         return;
       }
@@ -142,10 +159,7 @@
         // 1. Create the draft first
         const res = await fetch(API + '/listings', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + token,
-          },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(data),
         });
 
@@ -172,7 +186,7 @@
           if (photoUrls.length > 0) {
             await fetch(API + '/listings/' + listingId + '/photos', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+              headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({ urls: photoUrls }),
             });
           }

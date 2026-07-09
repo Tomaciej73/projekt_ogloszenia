@@ -3,7 +3,7 @@
 ## Current Status
 **Phase 7 - BullMQ Worker Integrated and Frontend Publication** (complete, with auth hardening updates on 2026-07-09)
 
-BullMQ worker processes publication jobs from the Redis queue on port 6739. The API pushes publication jobs to the queue instead of using `setTimeout` mocks. The current runtime stack uses plain Node.js servers for API, web, and worker, with JWT auth, SMTP account activation emails, DB-backed login lockout after 5 failed attempts, 6-digit reset codes, and stronger password validation across registration and reset flows.
+BullMQ worker processes publication jobs from the Redis queue on port 6739. The API pushes publication jobs to the queue instead of using `setTimeout` mocks. The current runtime stack uses plain Node.js servers for API, web, and worker, with HttpOnly cookie auth backed by JWT signing, SMTP account activation emails, DB-backed login lockout after 5 failed attempts, 6-digit reset codes, and stronger password validation across registration and reset flows.
 
 ## Completed
 
@@ -22,10 +22,11 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 ### Backend API (`apps/api/db-server.js`) v0.3.0
 - [x] `POST /auth/register` - creates inactive accounts, generates activation tokens, sends activation email, and returns activation-required messaging
 - [x] `GET /auth/activate` - validates activation link, activates account, and renders an HTML confirmation page
-- [x] `POST /auth/login` - login with JWT Bearer token, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
+- [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
 - [x] `POST /auth/forgot-password` - validates email/account existence, generates a 6-digit reset code, stores only its DB-backed hash plus expiry metadata, sends it via SMTP, and doubles as the recovery activation path for inactive accounts
 - [x] `POST /auth/reset-password` - validates email, DB-backed reset code hash, strong password rules, changes password, clears reset state, unlocks locked accounts, and activates inactive accounts
 - [x] `GET /auth/me` - current user info
+- [x] `POST /auth/logout` - clears the HttpOnly auth cookie
 - [x] `GET /health` - health check with DB status
 - [x] `GET/POST /listings` - list/create listing drafts (auth required)
 - [x] `GET/PUT/DELETE /listings/:id` - CRUD operations (auth required)
@@ -51,12 +52,12 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint and DB-synced remaining login-attempt messaging
 - [x] `front-server.js` - static file server plus same-origin API and MinIO media proxy for VPS/Nginx deployment
 - [x] Dashboard after login with listing list and stats
-- [x] Session persistence via localStorage (survives refresh/new tab)
+- [x] Session persistence via HttpOnly auth cookie plus non-secret user cache in localStorage (survives refresh/new tab)
 
 ### Security
 - [x] All credentials only from `.env` via dotenv
 - [x] PBKDF2 + SHA512 + 100k iterations + 16B random salt
-- [x] JWT Bearer authentication
+- [x] Browser authentication via HttpOnly same-site JWT cookie
 - [x] Account activation via 1-hour email link with DB-backed activation token hash
 - [x] Account lockout after 5 failed login attempts, cleared only by successful password reset
 - [x] One-time 6-digit password reset codes with 1-hour expiry and DB-backed hashed persistence
@@ -87,7 +88,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - NestJS source code exists but is not used at runtime (plain Node.js servers are active instead).
 - 2 build scripts remain blocked (`msgpackr-extract`, `sharp`) - needed for Next.js builds, not blocking current development.
 - Auth endpoints still need rate limiting and resend throttling.
-- Manual security review is still in progress; remaining follow-up includes ownership checks on some write paths and moving auth away from `localStorage` so any future XSS has less impact.
+- Manual security review is still in progress; JWT is no longer stored in `localStorage`, but any future same-origin XSS could still act through an active browser session even though it can no longer trivially exfiltrate the JWT.
 - Real inbox delivery still depends on a verified `SMTP_FROM` sender and aligned SPF/DKIM/DMARC for the chosen SMTP relay.
 
 ## Current Port Assignments (from `.env`)
@@ -128,3 +129,4 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-09 | Publication-job creation now reuses the provider-specific `ExternalListing` row | Fixes `P2002` on repeated publish attempts for the same draft/provider while still allowing new `PublicationJob` records |
 | 2026-07-09 | Docker SMTP env now passes `SMTP_SECURE`, and sender config aligns with `noreply@multiportal.site` | Ensures recreated API containers use the intended Home.pl SSL mailbox config and improves inbox acceptance |
 | 2026-07-09 | Listing photo URLs are now restricted to uploaded media paths and rendered via DOM APIs | Blocks stored XSS through malicious `photoUrls` values and suppresses legacy unsafe records in API responses |
+| 2026-07-09 | Browser auth moved from JWT-in-`localStorage` to an HttpOnly `mp_auth` cookie | Reduces account-takeover impact of future XSS by keeping the signed session token out of JavaScript-readable storage |

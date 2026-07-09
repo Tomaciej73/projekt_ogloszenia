@@ -26,23 +26,27 @@ const ACTIVATION_EXPIRY_MS = 3600000;
 const MAX_LOGIN_ATTEMPTS = 5;
 const MAX_RESET_ATTEMPTS = 5;
 const MEDIA_PROXY_PREFIX = "/media-files";
+const AUTH_COOKIE_NAME = "mp_auth";
+const AUTH_COOKIE_MAX_AGE_SECONDS = 24 * 60 * 60;
 const INACTIVE_LOGIN_MESSAGE = "Your account is not active yet. Check your email for the activation link or use Forgot password to activate your account.";
 const INACTIVE_REGISTER_MESSAGE = "An account with this email already exists but is not active. Use Forgot password to activate your account and set a new password.";
 const LOCKED_LOGIN_MESSAGE = "Your account is locked after 5 failed login attempts. Use Forgot password to unlock your account and set a new password.";
 
-function jsonResponse(res, status, data) {
+function jsonResponse(res, status, data, extraHeaders = {}) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    ...extraHeaders,
   });
   res.end(JSON.stringify(data, null, JSON_SPACES));
 }
 
-function htmlResponse(res, status, html) {
+function htmlResponse(res, status, html, extraHeaders = {}) {
   res.writeHead(status, {
     "Content-Type": "text/html; charset=utf-8",
+    ...extraHeaders,
   });
   res.end(html);
 }
@@ -370,6 +374,60 @@ function verifyToken(token) {
   }
 }
 
+function parseCookies(req) {
+  const rawCookieHeader = req.headers.cookie;
+  if (!rawCookieHeader) return {};
+
+  return rawCookieHeader.split(";").reduce((cookies, part) => {
+    const [rawName, ...rawValueParts] = part.trim().split("=");
+    if (!rawName) return cookies;
+    const rawValue = rawValueParts.join("=");
+    try {
+      cookies[rawName] = rawValue ? decodeURIComponent(rawValue) : "";
+    } catch {
+      cookies[rawName] = rawValue || "";
+    }
+    return cookies;
+  }, {});
+}
+
+function isSecureRequest(req) {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").toLowerCase();
+  return forwardedProto === "https";
+}
+
+function buildCookieHeader(name, value, options = {}) {
+  const parts = [`${name}=${encodeURIComponent(value)}`];
+  if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`);
+  if (options.expires instanceof Date) parts.push(`Expires=${options.expires.toUTCString()}`);
+  parts.push(`Path=${options.path || "/"}`);
+  if (options.httpOnly !== false) parts.push("HttpOnly");
+  if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
+  if (options.secure) parts.push("Secure");
+  return parts.join("; ");
+}
+
+function buildAuthCookie(req, token) {
+  return buildCookieHeader(AUTH_COOKIE_NAME, token, {
+    maxAge: AUTH_COOKIE_MAX_AGE_SECONDS,
+    path: "/",
+    httpOnly: true,
+    sameSite: "Lax",
+    secure: isSecureRequest(req),
+  });
+}
+
+function buildClearedAuthCookie(req) {
+  return buildCookieHeader(AUTH_COOKIE_NAME, "", {
+    maxAge: 0,
+    expires: new Date(0),
+    path: "/",
+    httpOnly: true,
+    sameSite: "Lax",
+    secure: isSecureRequest(req),
+  });
+}
+
 async function seedProviders() {
   await prisma.marketplaceProvider.createMany({
     data: [
@@ -383,8 +441,12 @@ async function seedProviders() {
 
 function getUserId(req) {
   const auth = req.headers["authorization"];
-  if (!auth?.startsWith("Bearer ")) return null;
-  return verifyToken(auth.slice(7));
+  if (auth?.startsWith("Bearer ")) {
+    const bearerUserId = verifyToken(auth.slice(7));
+    if (bearerUserId) return bearerUserId;
+  }
+  const cookies = parseCookies(req);
+  return verifyToken(cookies[AUTH_COOKIE_NAME] || "");
 }
 
 const server = http.createServer(async (req, res) => {
@@ -543,7 +605,12 @@ const server = http.createServer(async (req, res) => {
 
       await seedProviders();
       const token = signToken(user.id);
-      return jsonResponse(res, 200, { user: { id: user.id, email: user.email, name: user.name }, token });
+      return jsonResponse(
+        res,
+        200,
+        { user: { id: user.id, email: user.email, name: user.name }, session: "cookie" },
+        { "Set-Cookie": buildAuthCookie(req, token) },
+      );
     }
 
     // ── Auth: Forgot Password ──
@@ -795,6 +862,15 @@ const server = http.createServer(async (req, res) => {
       if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
       const user = await prisma.user.findUnique({ where: { id: uid } });
       return jsonResponse(res, 200, { user: { id: user.id, email: user.email, name: user.name } });
+    }
+
+    if (path === "/auth/logout" && req.method === "POST") {
+      return jsonResponse(
+        res,
+        200,
+        { message: "Logged out successfully." },
+        { "Set-Cookie": buildClearedAuthCookie(req) },
+      );
     }
 
     // ── Health ──

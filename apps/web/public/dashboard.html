@@ -61,13 +61,29 @@
 
   <script>
     const API = '';
-    const TOKEN = localStorage.getItem('token');
+    const COOKIE_SESSION_MARKER = 'cookie-session';
+    let token = localStorage.getItem('token') || '';
 
-    if (!TOKEN) {
-      document.getElementById('listingsList').innerHTML = '<p style="color:#fca5a5;padding:2rem;text-align:center">Please <a href="/" style="color:#e94560">log in</a> first.</p>';
-    } else {
-      loadData();
+    function getAuthHeaders(extraHeaders = {}) {
+      const jwtLike = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token);
+      return jwtLike ? { ...extraHeaders, Authorization: 'Bearer ' + token } : extraHeaders;
     }
+
+    (async () => {
+      try {
+        const res = await fetch(API + '/auth/me');
+        if (!res.ok) throw new Error('Not authenticated');
+        const data = await res.json();
+        token = token || COOKIE_SESSION_MARKER;
+        localStorage.setItem('token', COOKIE_SESSION_MARKER);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        loadData();
+      } catch {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        document.getElementById('listingsList').innerHTML = '<p style="color:#fca5a5;padding:2rem;text-align:center">Please <a href="/" style="color:#e94560">log in</a> first.</p>';
+      }
+    })();
 
     function showMsg(text, type) {
       const m = document.getElementById('msg');
@@ -79,9 +95,9 @@
     async function loadData() {
       try {
         const [listingsRes, providersRes, accountsRes] = await Promise.all([
-          fetch(API + '/listings', { headers: { 'Authorization': 'Bearer ' + TOKEN } }),
+          fetch(API + '/listings', { headers: getAuthHeaders() }),
           fetch(API + '/providers'),
-          fetch(API + '/marketplace-accounts', { headers: { 'Authorization': 'Bearer ' + TOKEN } }),
+          fetch(API + '/marketplace-accounts', { headers: getAuthHeaders() }),
         ]);
 
         const listingsData = await listingsRes.json();
@@ -127,14 +143,14 @@
         // First connect the account if not already connected
         await fetch(API + '/marketplace-accounts', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ providerSlug }),
         });
 
         // Create publication job
         const res = await fetch(API + '/publication-jobs', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ listingId }),
         });
 

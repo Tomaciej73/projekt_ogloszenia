@@ -42,6 +42,7 @@
 
   <script>
     const API = '';
+    const COOKIE_SESSION_MARKER = 'cookie-session';
 
     function setAttemptsHint(message, tone = 'warning') {
       const hint = document.getElementById('attemptsHint');
@@ -93,7 +94,7 @@
           throw new Error(data.error || 'Login failed');
         }
 
-        localStorage.setItem('token', data.token);
+        localStorage.setItem('token', COOKIE_SESSION_MARKER);
         localStorage.setItem('user', JSON.stringify(data.user));
         setAttemptsHint('');
         window.location.href = '/';
