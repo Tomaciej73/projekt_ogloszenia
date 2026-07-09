@@ -2,14 +2,25 @@ const nodemailer = require("nodemailer");
 
 const DEFAULT_SMTP_FROM = "noreply@manager.multiportal.site";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
+const SMTP_PORT = parseInt(process.env.SMTP_PORT, 10);
+const SMTP_USER = String(process.env.SMTP_USER || "").trim();
+const SMTP_SECURE = String(process.env.SMTP_SECURE || "").trim().toLowerCase() === "true" || SMTP_PORT === 465;
+const SMTP_REQUIRE_TLS = SMTP_SECURE ? false : String(process.env.SMTP_REQUIRE_TLS || "true").trim().toLowerCase() !== "false";
+const SMTP_CONNECTION_TIMEOUT_MS = 15000;
+const SMTP_GREETING_TIMEOUT_MS = 10000;
+const SMTP_SOCKET_TIMEOUT_MS = 20000;
 
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT, 10),
-  secure: false,
-  requireTLS: true,
+  host: SMTP_HOST,
+  port: SMTP_PORT,
+  secure: SMTP_SECURE,
+  requireTLS: SMTP_REQUIRE_TLS,
+  connectionTimeout: SMTP_CONNECTION_TIMEOUT_MS,
+  greetingTimeout: SMTP_GREETING_TIMEOUT_MS,
+  socketTimeout: SMTP_SOCKET_TIMEOUT_MS,
   auth: {
-    user: process.env.SMTP_USER || "",
+    user: SMTP_USER || "",
     pass: process.env.SMTP_PASSWORD || "",
   },
   tls: {
@@ -26,7 +37,6 @@ function getEmailDomain(email) {
   return normalizeEmail(email).split("@")[1] || "";
 }
 
-const SMTP_USER = String(process.env.SMTP_USER || "").trim();
 const EXPLICIT_FROM = normalizeEmail(process.env.SMTP_FROM);
 const FROM = EXPLICIT_FROM || DEFAULT_SMTP_FROM;
 const FROM_NAME = String(process.env.SMTP_FROM_NAME || "MultiPortal").trim() || "MultiPortal";
@@ -53,6 +63,15 @@ if (EMAIL_RE.test(SMTP_USER) && getEmailDomain(SMTP_USER) !== getEmailDomain(FRO
   console.warn(
     `Mail config warning: SMTP_FROM domain (${getEmailDomain(FROM)}) differs from SMTP_USER domain (${getEmailDomain(SMTP_USER)}). If SPF/DKIM/DMARC are not aligned, mailbox providers may junk or reject messages.`,
   );
+}
+
+async function logTransportStatus() {
+  try {
+    await transporter.verify();
+    console.log(`SMTP transport verified for ${SMTP_HOST}:${SMTP_PORT} (${SMTP_SECURE ? "SSL/TLS" : SMTP_REQUIRE_TLS ? "STARTTLS" : "plain"})`);
+  } catch (error) {
+    console.error(`SMTP transport verify failed for ${SMTP_HOST}:${SMTP_PORT}: ${error.message}`);
+  }
 }
 
 function escapeHtml(value) {
@@ -129,6 +148,16 @@ function sendMail({ to, subject, html, text }) {
   });
 }
 
+function formatMailDeliveryResult(mailInfo) {
+  return {
+    messageId: mailInfo?.messageId || "",
+    accepted: Array.isArray(mailInfo?.accepted) ? mailInfo.accepted : [],
+    rejected: Array.isArray(mailInfo?.rejected) ? mailInfo.rejected : [],
+    pending: Array.isArray(mailInfo?.pending) ? mailInfo.pending : [],
+    response: mailInfo?.response || "",
+  };
+}
+
 async function sendPasswordResetEmail(to, resetCode, userName, activatesAccount = false) {
   const firstName = getFirstName(userName);
   const subject = activatesAccount
@@ -195,6 +224,9 @@ async function sendAccountActivationEmail(to, activationUrl, userName) {
 }
 
 module.exports = {
+  formatMailDeliveryResult,
   sendPasswordResetEmail,
   sendAccountActivationEmail,
 };
+
+void logTransportStatus();

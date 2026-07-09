@@ -60,6 +60,8 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Account activation via 1-hour email link with DB-backed activation token hash
 - [x] Account lockout after 5 failed login attempts, cleared only by successful password reset
 - [x] One-time 6-digit password reset codes with 1-hour expiry and DB-backed hashed persistence
+- [x] SMTP startup verification plus delivery-result logging to separate relay acceptance from inbox-side deliverability issues
+- [x] SMTP runtime now supports both `587` STARTTLS and `465` SSL/TLS via `SMTP_SECURE`
 - [x] SMTP debug transport logging disabled to avoid leaking reset codes or mail transport details in container logs
 - [x] Mail config warnings for placeholder/misaligned SMTP sender settings
 - [x] Runtime SMTP config supports explicit `SMTP_FROM_NAME`, `SMTP_REPLY_TO`, `SMTP_SENDER`, and optional public URL envs for domain-based auth links
@@ -116,3 +118,5 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-09 | Nodemailer debug logging disabled in runtime | Prevents reset codes and SMTP details from appearing in `docker logs` |
 | 2026-07-09 | New accounts stay inactive until email activation or forgot-password activation | Keeps registration explicit and gives an owner-approved recovery path for expired activation links |
 | 2026-07-09 | API container runs `prisma migrate deploy` during startup | Prevents registration/login/auth regressions after deploys when PostgreSQL still has the previous schema |
+| 2026-07-09 | SMTP startup verify and accepted/rejected logging added | Makes VPS mail troubleshooting clearer and fails faster when the relay is unreachable or slow |
+| 2026-07-09 | Mailer now supports implicit TLS on port 465 via `SMTP_SECURE` | Allows switching from STARTTLS relays to SSL/TLS SMTP hosts without code changes |

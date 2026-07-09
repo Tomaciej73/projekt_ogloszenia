@@ -35,6 +35,8 @@ A fully working application is running: user registration/login with JWT Bearer 
 
 ## Recent Changes
 
+- 2026-07-09: Added SMTP transport mode selection in `apps/api/mail.js` via `SMTP_SECURE` with automatic SSL mode on port `465`, so the app can use either STARTTLS on `587` or implicit TLS on `465`.
+- 2026-07-09: Added SMTP startup verification, shorter SMTP timeouts, and delivery-result logging (`messageId`, `accepted`, `rejected`, `response`) so deployed containers can distinguish relay acceptance from later inbox delivery problems.
 - 2026-07-09: Added an API container entrypoint that runs `prisma migrate deploy` before starting `apps/api/db-server.js`, reducing VPS deployment failures caused by newer auth code running against an older PostgreSQL schema.
 - 2026-07-09: Switched source defaults and runtime SMTP sender config to `noreply@manager.multiportal.site`, added `SMTP_FROM_NAME` / `SMTP_REPLY_TO` / `SMTP_SENDER`, and added optional `API_PUBLIC_URL` / `WEB_PUBLIC_URL` support for public auth links.
 - 2026-07-09: Switched frontend API calls to same-origin paths and added `apps/web/front-server.js` proxying for `/auth`, `/listings`, `/providers`, `/marketplace-accounts`, `/publication-jobs`, `/media`, and `/health`, fixing external `Failed to fetch` errors behind VPS/Nginx deployments.

@@ -8,7 +8,7 @@ const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
 const { getPresignedUploadUrl, ensureBucket, minioClient, BUCKET } = require("./minio");
-const { sendPasswordResetEmail, sendAccountActivationEmail } = require("./mail");
+const { sendPasswordResetEmail, sendAccountActivationEmail, formatMailDeliveryResult } = require("./mail");
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6739";
 const publicationQueue = new Queue("publication", { connection: { url: REDIS_URL } });
@@ -323,7 +323,7 @@ const server = http.createServer(async (req, res) => {
         if (!activationEmailSent) {
           message = 'Account created, but the activation email was rejected. Use "Forgot password" to activate your account.';
         } else {
-          console.log(`Account activation email sent to ${email}`);
+          console.log(`Account activation email sent to ${email}`, formatMailDeliveryResult(mailInfo));
         }
       } catch (mailErr) {
         message = 'Account created, but the activation email could not be sent. Use "Forgot password" to activate your account.';
@@ -552,7 +552,7 @@ const server = http.createServer(async (req, res) => {
           });
           return jsonResponse(res, 502, { error: "Reset email was rejected by the mail server. Please verify the address and try again." });
         }
-        console.log(`Password reset email sent to ${email}`);
+        console.log(`Password reset email sent to ${email}`, formatMailDeliveryResult(mailInfo));
       } catch (mailErr) {
         await prisma.user.update({
           where: { id: user.id },
