@@ -31,19 +31,33 @@
       <label>Password</label>
       <input type="password" id="password" required placeholder="Your password" autocomplete="current-password">
       <button type="submit" id="submitBtn">Log In</button>
+      <p id="attemptsHint" style="display:none;margin-top:0.85rem;font-size:0.8rem;color:#8a6d3b"></p>
     </form>
     <div id="result" class="result"></div>
     <div class="links">
-      If your account is inactive, use <a href="/">Forgot password</a> to activate it.<br>
+      If your account is inactive or locked, use <a href="/">Forgot password</a> to restore access.<br>
       Don't have an account? <a href="/register">Sign up</a>
     </div>
   </div>
 
   <script>
+    function setAttemptsHint(message, tone = 'warning') {
+      const hint = document.getElementById('attemptsHint');
+      if (!message) {
+        hint.textContent = '';
+        hint.style.display = 'none';
+        return;
+      }
+      hint.textContent = message;
+      hint.style.display = 'block';
+      hint.style.color = tone === 'error' ? '#b91c1c' : '#8a6d3b';
+    }
+
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('submitBtn');
       const result = document.getElementById('result');
+      const email = document.getElementById('email').value.trim();
       btn.disabled = true;
       btn.textContent = 'Logging in...';
       result.className = 'result';
@@ -54,16 +68,32 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            email: document.getElementById('email').value,
+            email,
             password: document.getElementById('password').value,
           }),
         });
 
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Login failed');
+        if (!res.ok) {
+          if (typeof data.remainingLoginAttempts === 'number') {
+            setAttemptsHint(
+              `Remaining failed login attempts before lock: ${data.remainingLoginAttempts}.`,
+              data.accountLocked ? 'error' : 'warning',
+            );
+          } else {
+            setAttemptsHint('');
+          }
+
+          if (res.status === 423 || data.accountLocked) {
+            setAttemptsHint('Account locked. Use Forgot password on the main page to unlock it.', 'error');
+          }
+
+          throw new Error(data.error || 'Login failed');
+        }
 
         localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify({ id: data.userId, name: data.name, email: data.email }));
+        localStorage.setItem('user', JSON.stringify(data.user));
+        setAttemptsHint('');
         window.location.href = '/';
       } catch (error) {
         result.className = 'result error';

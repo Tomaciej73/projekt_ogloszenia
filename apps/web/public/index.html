@@ -86,10 +86,11 @@
               <label>Password</label>
               <input type="password" id="loginPassword" required placeholder="Your password" autocomplete="current-password">
               <button type="submit" id="loginBtn">Log In</button>
+              <p id="loginAttemptsHint" style="display:none;font-size:0.75rem;color:rgba(255,255,255,0.55);margin-top:0.75rem"></p>
               <p style="text-align:center;margin-top:0.75rem"><a href="#" onclick="showForgotPassword()" style="color:rgba(255,255,255,0.5);font-size:0.85rem">Forgot password?</a></p>
             </form>
             <div id="forgotPasswordForm" style="display:none;border-top:1px solid rgba(255,255,255,0.1);padding-top:1rem;margin-top:1rem">
-              <p style="font-size:0.75rem;color:rgba(255,255,255,0.45);margin-bottom:0.75rem">If your account is inactive, this reset flow will also activate it after you set a new password.</p>
+              <p style="font-size:0.75rem;color:rgba(255,255,255,0.45);margin-bottom:0.75rem">If your account is inactive or locked, this reset flow will restore access after you set a new password.</p>
               <p style="font-size:0.85rem;color:rgba(255,255,255,0.5);margin-bottom:1rem">Enter your email — you will receive a reset code via email.</p>
               <label>Email</label>
               <input type="email" id="forgotEmail" required placeholder="you@example.com">
@@ -204,24 +205,58 @@
       document.getElementById('tab-' + name).classList.add('active');
     }
 
+    function setLoginAttemptsHint(message, tone = 'muted') {
+      const hint = document.getElementById('loginAttemptsHint');
+      if (!hint) return;
+      if (!message) {
+        hint.textContent = '';
+        hint.style.display = 'none';
+        return;
+      }
+      hint.textContent = message;
+      hint.style.display = 'block';
+      hint.style.color = tone === 'error'
+        ? '#fca5a5'
+        : tone === 'warning'
+          ? '#fcd34d'
+          : 'rgba(255,255,255,0.55)';
+    }
+
     // ── AUTH ──
     async function handleLogin(e) {
       e.preventDefault();
       const btn = document.getElementById('loginBtn');
+      const loginEmail = document.getElementById('loginEmail').value.trim();
       btn.disabled = true; btn.textContent = 'Logging in...';
       try {
         const res = await fetch(API + '/auth/login', {
           method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ email: document.getElementById('loginEmail').value, password: document.getElementById('loginPassword').value }),
+          body: JSON.stringify({ email: loginEmail, password: document.getElementById('loginPassword').value }),
         });
         const data = await res.json();
         if (!res.ok) {
+          if (typeof data.remainingLoginAttempts === 'number') {
+            setLoginAttemptsHint(
+              `Remaining failed login attempts before lock: ${data.remainingLoginAttempts}.`,
+              data.accountLocked ? 'error' : data.remainingLoginAttempts <= 2 ? 'warning' : 'muted',
+            );
+          } else {
+            setLoginAttemptsHint('');
+          }
           if (res.status === 403 && /not active/i.test(data.error || '')) {
-            document.getElementById('forgotEmail').value = document.getElementById('loginEmail').value;
+            document.getElementById('forgotEmail').value = loginEmail;
             document.getElementById('forgotPasswordForm').style.display = 'block';
+          }
+          if (res.status === 423 || data.accountLocked) {
+            document.getElementById('forgotEmail').value = loginEmail;
+            document.getElementById('forgotPasswordForm').style.display = 'block';
+            setLoginAttemptsHint('Account locked. Use Forgot password to unlock it.', 'error');
+            toast(data.error || 'Account locked. Use Forgot password to unlock it.', 'warning');
+            return;
           }
           throw new Error(data.error || 'Login failed');
         }
+        setLoginAttemptsHint('');
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         showDashboard(data.user);
@@ -612,6 +647,7 @@
       const btn = document.getElementById('resetPwdBtn');
       const resetCode = normalizeResetCode(document.getElementById('resetCode').value);
       const password = document.getElementById('resetPassword').value;
+      const forgotEmail = document.getElementById('forgotEmail').value.trim();
       const passwordError = validatePasswordStrength(password);
       if (!/^[0-9]{6}$/.test(resetCode)) {
         toast('Enter the 6-digit reset code from your email.', 'error');
@@ -625,11 +661,14 @@
       try {
         const res = await fetch(API + '/auth/reset-password', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: document.getElementById('forgotEmail').value, code: resetCode, password }),
+          body: JSON.stringify({ email: forgotEmail, code: resetCode, password }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Reset failed');
         toast(data.message, 'success');
+        document.getElementById('loginEmail').value = forgotEmail;
+        document.getElementById('loginPassword').value = '';
+        setLoginAttemptsHint('');
         document.getElementById('forgotPasswordForm').style.display = 'none';
         document.getElementById('resetCodeSection').style.display = 'none';
         document.getElementById('forgotEmail').value = '';

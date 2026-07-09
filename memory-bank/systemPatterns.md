@@ -159,8 +159,15 @@ apps/api/src/
 - `POST /auth/reset-password` validates email, reset code, expiry, and strong password rules before updating the stored password hash.
 - Invalid code submissions increment `passwordResetAttempts`; after 5 failed attempts the reset state is cleared and the user must request a new code.
 - Reset codes are single-use and removed after a successful password reset or when an expired code or attempt limit is detected.
+- Successful password reset also clears any account lock state (`failedLoginAttempts`, `lockedAt`) so reset is the only recovery path for locked accounts.
 
-### 11. Account Activation Flow
+### 11. Login Lockout Flow
+- `POST /auth/login` keeps `failedLoginAttempts` and `lockedAt` on the `User` row in PostgreSQL.
+- Each invalid password increments the DB counter and the API returns the remaining attempts so the frontend can show a synchronized countdown.
+- On the 5th failed password the API stores `lockedAt`, caps `failedLoginAttempts` at 5, and returns `423 Locked` with guidance to use `Forgot password`.
+- Successful login clears the failed-attempt counter as long as the account was not already locked.
+
+### 12. Account Activation Flow
 - `POST /auth/register` creates the user immediately but keeps the account inactive until email confirmation.
 - Registration generates a random activation token, stores only its SHA-256 hash plus a 1-hour expiry in PostgreSQL, and sends the raw link token by email.
 - `GET /auth/activate?email=...&token=...` activates the account when the token hash matches and the expiry has not passed.

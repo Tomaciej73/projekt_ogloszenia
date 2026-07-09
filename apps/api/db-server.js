@@ -23,9 +23,11 @@ const prisma = new PrismaClient({ adapter });
 const JSON_SPACES = 2;
 const RESET_EXPIRY_MS = 3600000;
 const ACTIVATION_EXPIRY_MS = 3600000;
+const MAX_LOGIN_ATTEMPTS = 5;
 const MAX_RESET_ATTEMPTS = 5;
 const INACTIVE_LOGIN_MESSAGE = "Your account is not active yet. Check your email for the activation link or use Forgot password to activate your account.";
 const INACTIVE_REGISTER_MESSAGE = "An account with this email already exists but is not active. Use Forgot password to activate your account and set a new password.";
+const LOCKED_LOGIN_MESSAGE = "Your account is locked after 5 failed login attempts. Use Forgot password to unlock your account and set a new password.";
 
 function jsonResponse(res, status, data) {
   res.writeHead(status, {
@@ -169,6 +171,21 @@ function getWebBaseUrl(req) {
 function buildActivationUrl(req, email, token) {
   const baseUrl = getApiBaseUrl(req);
   return `${baseUrl}/auth/activate?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`;
+}
+
+function getRemainingLoginAttempts(failedLoginAttempts) {
+  return Math.max(0, MAX_LOGIN_ATTEMPTS - (failedLoginAttempts ?? 0));
+}
+
+function buildInvalidLoginMessage(remainingLoginAttempts) {
+  return `Invalid email or password. ${remainingLoginAttempts} login ${remainingLoginAttempts === 1 ? "attempt" : "attempts"} remaining before your account is locked.`;
+}
+
+function loginLockStateClearedData() {
+  return {
+    failedLoginAttempts: 0,
+    lockedAt: null,
+  };
 }
 
 function passwordResetStateClearedData() {
@@ -330,12 +347,67 @@ const server = http.createServer(async (req, res) => {
       if (emailErr) return jsonResponse(res, 400, { error: emailErr });
       if (!body.password) return jsonResponse(res, 400, { error: "Password is required." });
 
-      const user = await prisma.user.findUnique({ where: { email } });
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          passwordHash: true,
+          isActive: true,
+          failedLoginAttempts: true,
+          lockedAt: true,
+        },
+      });
       if (!user) return jsonResponse(res, 401, { error: "Invalid email or password" });
       if (!user.isActive) return jsonResponse(res, 403, { error: INACTIVE_LOGIN_MESSAGE });
+      if (user.lockedAt) {
+        return jsonResponse(res, 423, {
+          error: LOCKED_LOGIN_MESSAGE,
+          accountLocked: true,
+          failedLoginAttempts: user.failedLoginAttempts ?? MAX_LOGIN_ATTEMPTS,
+          remainingLoginAttempts: 0,
+        });
+      }
 
       const pwdOk = verifyPassword(body.password, user.passwordHash);
-      if (!pwdOk) return jsonResponse(res, 401, { error: "Invalid email or password" });
+      if (!pwdOk) {
+        const failedLoginAttempts = (user.failedLoginAttempts ?? 0) + 1;
+        if (failedLoginAttempts >= MAX_LOGIN_ATTEMPTS) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              failedLoginAttempts: MAX_LOGIN_ATTEMPTS,
+              lockedAt: new Date(),
+            },
+          });
+          return jsonResponse(res, 423, {
+            error: LOCKED_LOGIN_MESSAGE,
+            accountLocked: true,
+            failedLoginAttempts: MAX_LOGIN_ATTEMPTS,
+            remainingLoginAttempts: 0,
+          });
+        }
+
+        const remainingLoginAttempts = getRemainingLoginAttempts(failedLoginAttempts);
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { failedLoginAttempts },
+        });
+        return jsonResponse(res, 401, {
+          error: buildInvalidLoginMessage(remainingLoginAttempts),
+          accountLocked: false,
+          failedLoginAttempts,
+          remainingLoginAttempts,
+        });
+      }
+
+      if ((user.failedLoginAttempts ?? 0) > 0 || user.lockedAt) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: loginLockStateClearedData(),
+        });
+      }
 
       await seedProviders();
       const token = signToken(user.id);
@@ -453,7 +525,7 @@ const server = http.createServer(async (req, res) => {
 
       const user = await prisma.user.findUnique({
         where: { email },
-        select: { id: true, name: true, isActive: true },
+        select: { id: true, name: true, isActive: true, lockedAt: true },
       });
       if (!user) return jsonResponse(res, 404, { error: "No account found for this email address." });
 
@@ -490,9 +562,13 @@ const server = http.createServer(async (req, res) => {
       }
 
       return jsonResponse(res, 200, {
-        message: user.isActive
-          ? "Reset code sent. Check your email for the 6-digit code."
-          : "Activation code sent. Check your email for the 6-digit code and set a new password to activate your account.",
+        message: !user.isActive && user.lockedAt
+          ? "Activation and unlock code sent. Check your email for the 6-digit code and set a new password to restore access."
+          : !user.isActive
+            ? "Activation code sent. Check your email for the 6-digit code and set a new password to activate your account."
+            : user.lockedAt
+              ? "Unlock code sent. Check your email for the 6-digit code and set a new password to unlock your account."
+              : "Reset code sent. Check your email for the 6-digit code.",
       });
     }
 
@@ -515,6 +591,7 @@ const server = http.createServer(async (req, res) => {
         select: {
           id: true,
           isActive: true,
+          lockedAt: true,
           passwordResetCodeHash: true,
           passwordResetCodeExpiresAt: true,
           passwordResetAttempts: true,
@@ -562,14 +639,21 @@ const server = http.createServer(async (req, res) => {
           isActive: true,
           activationTokenHash: null,
           activationTokenExpiresAt: null,
+          ...loginLockStateClearedData(),
           ...passwordResetStateClearedData(),
           ...(user.isActive ? {} : { activatedAt: new Date() }),
         },
       });
+
+      const wasLocked = Boolean(user.lockedAt);
       return jsonResponse(res, 200, {
-        message: user.isActive
-          ? "Password has been reset. You can now log in with the new password."
-          : "Your account has been activated and your password has been updated. You can now log in.",
+        message: !user.isActive && wasLocked
+          ? "Your account has been activated, unlocked, and your password has been updated. You can now log in."
+          : !user.isActive
+            ? "Your account has been activated and your password has been updated. You can now log in."
+            : wasLocked
+              ? "Your account has been unlocked and your password has been updated. You can now log in."
+              : "Password has been reset. You can now log in with the new password.",
       });
     }
 
