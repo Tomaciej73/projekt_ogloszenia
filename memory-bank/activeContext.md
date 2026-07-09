@@ -35,6 +35,7 @@ A fully working application is running: user registration/login with JWT Bearer 
 
 ## Recent Changes
 
+- 2026-07-09: Added an API container entrypoint that runs `prisma migrate deploy` before starting `apps/api/db-server.js`, reducing VPS deployment failures caused by newer auth code running against an older PostgreSQL schema.
 - 2026-07-09: Switched source defaults and runtime SMTP sender config to `noreply@manager.multiportal.site`, added `SMTP_FROM_NAME` / `SMTP_REPLY_TO` / `SMTP_SENDER`, and added optional `API_PUBLIC_URL` / `WEB_PUBLIC_URL` support for public auth links.
 - 2026-07-09: Switched frontend API calls to same-origin paths and added `apps/web/front-server.js` proxying for `/auth`, `/listings`, `/providers`, `/marketplace-accounts`, `/publication-jobs`, `/media`, and `/health`, fixing external `Failed to fetch` errors behind VPS/Nginx deployments.
 - 2026-07-09: Fixed Docker PostgreSQL healthcheck spam by pointing `pg_isready` at the real application database instead of the username-derived default database.

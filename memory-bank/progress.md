@@ -11,6 +11,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `.clinerules/` - all 5 rules files, including "never revert owner changes"
 - [x] pnpm monorepo with 7 workspace packages
 - [x] Docker Compose with PostgreSQL 18, Redis 8, MinIO, API (3001), Web (3000)
+- [x] API container startup now runs `prisma migrate deploy` before serving requests, so Docker/VPS upgrades apply pending schema changes automatically
 - [x] Prisma v7 schema with 12 entities and 4 enums
 - [x] 5 Prisma migrations applied
 - [x] `.env` - all configuration via dotenv, no hardcoded credentials
@@ -114,3 +115,4 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-09 | Docker Postgres healthcheck now checks the real app database | Stops repeated `database "mp_admin" does not exist` log spam |
 | 2026-07-09 | Nodemailer debug logging disabled in runtime | Prevents reset codes and SMTP details from appearing in `docker logs` |
 | 2026-07-09 | New accounts stay inactive until email activation or forgot-password activation | Keeps registration explicit and gives an owner-approved recovery path for expired activation links |
+| 2026-07-09 | API container runs `prisma migrate deploy` during startup | Prevents registration/login/auth regressions after deploys when PostgreSQL still has the previous schema |

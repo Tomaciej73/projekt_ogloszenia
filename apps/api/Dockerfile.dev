@@ -7,15 +7,18 @@ RUN npm install dotenv pg @prisma/client @prisma/adapter-pg prisma jsonwebtoken 
 
 # Copy application source
 COPY apps/api/db-server.js apps/api/
+COPY apps/api/docker-entrypoint.sh apps/api/
 COPY apps/api/minio.js apps/api/
 COPY apps/api/mail.js apps/api/
 COPY apps/api/prisma/ apps/api/prisma/
 COPY packages/ packages/
 COPY prisma.config.ts prisma.config.ts
 
+RUN chmod +x apps/api/docker-entrypoint.sh
+
 # Generate Prisma client
 RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
 
 EXPOSE 3001
 
-CMD ["node", "apps/api/db-server.js"]
+CMD ["sh", "apps/api/docker-entrypoint.sh"]

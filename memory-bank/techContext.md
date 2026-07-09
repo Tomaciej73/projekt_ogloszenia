@@ -21,6 +21,7 @@
 ## Runtime Entry Points
 
 - `apps/web/front-server.js` serves static pages from `apps/web/public/`
+- `apps/api/docker-entrypoint.sh` runs `prisma migrate deploy` and then starts `apps/api/db-server.js`
 - `apps/api/db-server.js` handles the active REST API runtime
 - `apps/worker/worker.js` processes BullMQ jobs
 
@@ -176,7 +177,7 @@ packages/config/
 - Backend: Jest unit and integration tests
 - Frontend: Vitest plus Testing Library
 - E2E: Playwright
-- Current turn validation used syntax checks, `prisma migrate deploy`, Docker container restarts, and `curl`-driven auth flow verification; automated coverage is still pending
+- Current turn validation used syntax checks, container restarts, startup `prisma migrate deploy`, and `curl`-driven auth flow verification; automated coverage is still pending
 
 ## Constraints
 
