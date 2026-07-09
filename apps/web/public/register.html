@@ -44,6 +44,8 @@
   </div>
 
   <script>
+    const API = '';
+
     function validatePasswordStrength(password) {
       if (!password || password.length < 8) return 'Password must be at least 8 characters.';
       if (!/[a-z]/.test(password)) return 'Password must contain at least one lowercase letter.';
@@ -70,7 +72,7 @@
       result.style.display = 'none';
 
       try {
-        const res = await fetch('http://localhost:3001/auth/register', {
+        const res = await fetch(API + '/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

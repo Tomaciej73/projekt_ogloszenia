@@ -123,6 +123,8 @@ services:
       - "${WEB_PORT}:3000"
     environment:
       NODE_ENV: ${NODE_ENV}
+      API_PROXY_URL: http://api:3001
+      API_PORT: ${API_PORT}
     depends_on:
       - api
 

@@ -1,10 +1,55 @@
 const http = require("http");
+const https = require("https");
 const fs = require("fs");
 const path = require("path");
+
+const API_PROXY_URL = process.env.API_PROXY_URL || `http://localhost:${process.env.API_PORT || 3001}`;
+const API_ROUTE_PREFIXES = [
+  "/auth",
+  "/listings",
+  "/providers",
+  "/marketplace-accounts",
+  "/publication-jobs",
+  "/media",
+  "/health",
+];
+
+function isApiRoute(pathname) {
+  return API_ROUTE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+function proxyToApi(req, res, url) {
+  const target = new URL(`${url.pathname}${url.search}`, API_PROXY_URL);
+  const client = target.protocol === "https:" ? https : http;
+
+  const proxyReq = client.request(target, {
+    method: req.method,
+    headers: {
+      ...req.headers,
+      "x-forwarded-host": req.headers.host || "",
+      "x-forwarded-proto": req.headers["x-forwarded-proto"] || "http",
+    },
+  }, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on("error", (error) => {
+    res.writeHead(502, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ error: "API proxy request failed", detail: error.message }));
+  });
+
+  req.pipe(proxyReq);
+}
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let filePath = url.pathname;
+
+  if (isApiRoute(url.pathname)) {
+    proxyToApi(req, res, url);
+    return;
+  }
 
   if (filePath === "/" || filePath === "") {
     filePath = "/index.html";

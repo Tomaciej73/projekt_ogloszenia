@@ -3,7 +3,7 @@
 ## Current Phase
 **Phase 8 - Provider Research and Auth Hardening** (in progress)
 
-A fully working application is running: user registration/login with JWT Bearer auth and PBKDF2+SHA512 password hashing, account activation via expiring email links, DB-backed login lockout after repeated failures, password reset flow with SMTP-delivered 6-digit codes, listing draft CRUD stored in PostgreSQL via Prisma, publication job creation with BullMQ, and a web frontend dashboard. Docker Compose includes PostgreSQL 18, Redis 8, MinIO, and optional API+Web containers (`profile: full`).
+A fully working application is running: user registration/login with JWT Bearer auth and PBKDF2+SHA512 password hashing, account activation via expiring email links, DB-backed login lockout after repeated failures, password reset flow with SMTP-delivered 6-digit codes, listing draft CRUD stored in PostgreSQL via Prisma, publication job creation with BullMQ, and a web frontend dashboard. The web runtime now proxies API routes so browser clients can use the same origin instead of hardcoded `localhost` API URLs. Docker Compose includes PostgreSQL 18, Redis 8, MinIO, and optional API+Web containers (`profile: full`).
 
 ## Active Decisions
 
@@ -36,6 +36,7 @@ A fully working application is running: user registration/login with JWT Bearer 
 ## Recent Changes
 
 - 2026-07-09: Switched source defaults and runtime SMTP sender config to `noreply@manager.multiportal.site`, added `SMTP_FROM_NAME` / `SMTP_REPLY_TO` / `SMTP_SENDER`, and added optional `API_PUBLIC_URL` / `WEB_PUBLIC_URL` support for public auth links.
+- 2026-07-09: Switched frontend API calls to same-origin paths and added `apps/web/front-server.js` proxying for `/auth`, `/listings`, `/providers`, `/marketplace-accounts`, `/publication-jobs`, `/media`, and `/health`, fixing external `Failed to fetch` errors behind VPS/Nginx deployments.
 - 2026-07-09: Fixed Docker PostgreSQL healthcheck spam by pointing `pg_isready` at the real application database instead of the username-derived default database.
 - 2026-07-09: Added mail configuration warnings and `.env.example` SMTP placeholders so placeholder senders are easier to spot before testing inbox delivery.
 - 2026-07-09: Added account activation flow - registration now creates inactive accounts, sends a 1-hour activation link by email, blocks login until activation, and allows inactive accounts to be activated through the forgot-password reset flow.

@@ -43,11 +43,12 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] 3 retry attempts with exponential backoff (2s, 4s, 8s)
 
 ### Frontend (`apps/web/`)
-- [x] `public/index.html` - landing page with Login/Register tabs, activation-aware registration/login messaging, DB-synced remaining login-attempt messaging, forgot-password flow, reset code entry, and stronger password guidance
+- [x] `public/index.html` - landing page with Login/Register tabs, activation-aware registration/login messaging, DB-synced remaining login-attempt messaging, same-origin API calls, forgot-password flow, reset code entry, and stronger password guidance
 - [x] `public/create-listing.html` - listing creation form
 - [x] `public/dashboard.html` - publication dashboard: list listings, select provider, publish
 - [x] `public/register.html` - standalone registration page with strong password rules and activation-required messaging
 - [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint and DB-synced remaining login-attempt messaging
+- [x] `front-server.js` - static file server plus same-origin API proxy for VPS/Nginx deployment
 - [x] Dashboard after login with listing list and stats
 - [x] Session persistence via localStorage (survives refresh/new tab)
 

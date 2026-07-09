@@ -91,6 +91,7 @@ Checked 2026-07-07 via official/npm/Docker sources.
 - MinIO Console on host port `9001`
 - API runtime on host port `3001`
 - Web runtime on host port `3000`
+- Browser clients now call the web origin only; `apps/web/front-server.js` proxies selected API routes to the API runtime target.
 
 ## Environment Variables
 
@@ -102,7 +103,7 @@ Key `.env` groups:
 - **Auth:** `JWT_SECRET`, `SESSION_SECRET`, `CSRF_SECRET`
 - **SMTP:** `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`
 - **Encryption:** `TOKEN_ENCRYPTION_KEY`
-- **App:** `API_PORT`, `WEB_PORT`, `NODE_ENV`, `LOG_LEVEL`
+- **App:** `API_PORT`, `WEB_PORT`, `NODE_ENV`, `LOG_LEVEL`, `API_PROXY_URL`, optional `API_PUBLIC_URL`, optional `WEB_PUBLIC_URL`
 - **Provider OAuth (future):** `OLX_CLIENT_ID`, `OLX_CLIENT_SECRET`, etc.
 
 ## Package Structure
