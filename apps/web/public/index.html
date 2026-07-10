@@ -99,7 +99,7 @@
     <div id="loggedOutView">
       <div class="split">
         <div class="panel">
-          <h2>Welcome</h2>
+          <h2>&#128274; Welcome</h2>
           <div class="tabs">
             <div class="tab active" id="loginTab">Log In</div>
             <div class="tab" id="registerTab">Register</div>
@@ -145,14 +145,14 @@
           </div>
         </div>
         <div class="panel">
-          <h2>Features</h2>
+          <h2>&#128230; Features</h2>
           <ul class="feature-list">
-            <li>Create listing drafts once</li>
-            <li>Publish to multiple platforms</li>
-            <li>OLX - Vinted Pro - Facebook Marketplace</li>
-            <li>Track publication status per platform</li>
-            <li>Update, unpublish, and relist</li>
-            <li>Secure authentication</li>
+            <li>&#128221; Create listing drafts once</li>
+            <li>&#128228; Publish to multiple platforms</li>
+            <li>&#9989; OLX - Vinted Pro - Facebook Marketplace</li>
+            <li>&#128202; Track publication status per platform</li>
+            <li>&#128260; Update, unpublish, and relist</li>
+            <li>&#128274; Secure authentication</li>
           </ul>
         </div>
       </div>
@@ -162,22 +162,22 @@
     <div id="loggedInView" class="dashboard">
       <div class="split">
         <div class="panel" style="max-width:400px">
-          <h2>Account</h2>
+          <h2>&#128100; Account</h2>
           <div style="display:flex;flex-direction:column;gap:0.6rem;margin-bottom:1.5rem">
             <p><strong id="userName">-</strong></p>
             <p style="color:rgba(255,255,255,0.5);font-size:0.9rem" id="userEmail">-</p>
           </div>
-          <button class="secondary" id="logoutBtn">Log Out</button>
+          <button class="secondary" id="logoutBtn">&#128682; Log Out</button>
         </div>
         <div class="panel">
-          <h2>My Listings</h2>
+          <h2>&#128202; My Listings</h2>
           <div class="stats">
             <div class="stat"><div class="val" id="listingCount">-</div><div class="lbl">Drafts</div></div>
             <div class="stat"><div class="val" id="providerCount">3</div><div class="lbl">Providers</div></div>
           </div>
           <div class="action-row">
-            <button id="newListingBtn">New Listing</button>
-            <button class="secondary" id="refreshListingsBtn">Refresh</button>
+            <button id="newListingBtn">&#128221; New Listing</button>
+            <button class="secondary" id="refreshListingsBtn">&#128260; Refresh</button>
           </div>
           <div class="listings" id="listingsList">
             <p style="color:rgba(255,255,255,0.4);padding:1rem">Loading...</p>
@@ -496,7 +496,7 @@
 
         if (index === 0) {
           const badge = document.createElement('span');
-          badge.textContent = 'Primary';
+          badge.textContent = '\u2605 Primary';
           badge.style.cssText = 'position:absolute;top:4px;left:4px;background:#e94560;color:#fff;font-size:0.6rem;padding:2px 6px;border-radius:4px';
           item.appendChild(badge);
         }
@@ -728,9 +728,9 @@
         try {
           const url = await uploadPhotoForListing(file, listingId);
           urls.push(url);
-          toast('Uploaded: ' + file.name, 'success');
+          toast('\u{1F4F7} Uploaded: ' + file.name, 'success');
         } catch(e) {
-          toast('Failed: ' + file.name + ' - ' + e.message, 'error');
+          toast('\u274C Failed: ' + file.name + ' - ' + e.message, 'error');
         }
       }
       if (urls.length > 0) {
@@ -760,9 +760,9 @@
             <div id="editPhotoGrid" class="edit-photo-grid"></div>
             <div class="file-row">
               <input type="file" id="editPhotoInput" accept="image/*" multiple>
-              <button type="button" id="editAddPhotosBtn">Add</button>
+              <button type="button" id="editAddPhotosBtn">&#128247; Add</button>
             </div>
-            <p style="font-size:0.7rem;color:rgba(255,255,255,0.4);margin-top:-0.5rem;margin-bottom:1rem">Drag to reorder - Click * to set as primary</p>
+            <p style="font-size:0.7rem;color:rgba(255,255,255,0.4);margin-top:-0.5rem;margin-bottom:1rem">Drag to reorder - Click ★ to set as primary</p>
           `;
 
           document.getElementById('editContent').innerHTML = `
@@ -783,7 +783,7 @@
             </select>
             ${photosSection}
             <div class="modal-actions">
-              <button id="saveEditBtn">Save</button>
+              <button id="saveEditBtn">&#128190; Save</button>
               <button class="secondary" id="cancelEditBtn">Cancel</button>
             </div>
           `;
@@ -951,19 +951,19 @@
 
           const viewBtn = document.createElement('button');
           viewBtn.className = 'secondary';
-          viewBtn.textContent = 'View';
+          viewBtn.textContent = '\u{1F441} View';
           viewBtn.addEventListener('click', () => showDetail(l.id));
           actions.appendChild(viewBtn);
 
           const editBtn = document.createElement('button');
           editBtn.className = 'secondary';
-          editBtn.textContent = 'Edit';
+          editBtn.textContent = '\u270F\uFE0F Edit';
           editBtn.addEventListener('click', () => showEdit(l.id));
           actions.appendChild(editBtn);
 
           const deleteBtn = document.createElement('button');
           deleteBtn.className = 'danger';
-          deleteBtn.textContent = 'Delete';
+          deleteBtn.textContent = '\u{1F5D1} Delete';
           deleteBtn.addEventListener('click', () => deleteListing(l.id));
           actions.appendChild(deleteBtn);
 
@@ -995,7 +995,7 @@
         <p style="font-size:0.75rem;color:rgba(255,255,255,0.3);margin-top:0.5rem"><strong>Created:</strong> ${new Date(l.createdAt).toLocaleString()}</p>
         <p style="font-size:0.75rem;color:rgba(255,255,255,0.3)"><strong>ID:</strong> ${l.id}</p>
         <div class="detail-actions">
-          <button id="detailEditBtn">Edit</button>
+          <button id="detailEditBtn">&#9998;&#65039; Edit</button>
           <button class="secondary" id="detailCloseBtn">Close</button>
         </div>
       `;
@@ -1085,12 +1085,12 @@
 
         if (i === 0) {
           const badge = document.createElement('span');
-          badge.textContent = 'Primary';
+          badge.textContent = '\u2605 Primary';
           badge.style.cssText = 'position:absolute;bottom:4px;left:4px;background:#e94560;color:#fff;font-size:0.55rem;padding:2px 6px;border-radius:4px';
           thumb.appendChild(badge);
         } else {
           const primaryBtn = document.createElement('button');
-          primaryBtn.textContent = '*';
+          primaryBtn.textContent = '\u2605';
           primaryBtn.title = 'Set as primary';
           primaryBtn.style.cssText = 'position:absolute;bottom:4px;right:4px;width:22px;height:22px;background:rgba(0,0,0,0.6);border:none;border-radius:50%;color:#fff;font-size:12px;line-height:22px;padding:0;cursor:pointer';
           primaryBtn.addEventListener('click', (event) => {
