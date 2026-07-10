@@ -38,6 +38,7 @@ A fully working application is running: user registration/login with HttpOnly co
 
 ## Recent Changes
 
+- 2026-07-10: Refined the active `public/index.html` UI so the forgot-password panel stays collapsed until the user opens it, locked/inactive-login hints no longer auto-expand the reset form, listing rows have visible spacing again, and edit-modal photo thumbnails stay fixed-size instead of stretching to full width.
 - 2026-07-10: Aligned package scripts with the real runtime stack - root `pnpm dev` now targets the active API/web/worker processes, placeholder `echo ok` tests were replaced with real type/syntax smoke checks, and the Next/Nest scaffold sources no longer hardcode `localhost` for API/media URLs.
 - 2026-07-10: Hardened request-body parsing in the active API by enforcing streaming byte limits before buffering JSON into RAM, returning `413 Payload Too Large` for oversized requests, and giving `/media/upload` a dedicated higher cap sized for the existing 10 MB image limit plus base64 overhead.
 - 2026-07-10: Removed dangerous runtime config fallbacks from the active API/web/worker processes by adding per-runtime Zod loaders in `packages/config`, wiring the JS runtimes through `runtime-config.js` bridge files, requiring explicit proxy envs for the web server, and passing the missing auth/config secrets through Docker Compose.

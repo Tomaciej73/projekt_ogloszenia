@@ -49,7 +49,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] 3 retry attempts with exponential backoff (2s, 4s, 8s)
 
 ### Frontend (`apps/web/`)
-- [x] `public/index.html` - landing page with Login/Register tabs, activation-aware registration/login messaging, DB-synced remaining login-attempt messaging, same-origin API calls, CSRF-aware mutations, forgot-password flow, reset code entry, and stronger password guidance
+- [x] `public/index.html` - landing page with Login/Register tabs, activation-aware registration/login messaging, DB-synced remaining login-attempt messaging, same-origin API calls, CSRF-aware mutations, forgot-password flow, reset code entry, stronger password guidance, and stabilized dashboard/modal thumbnail layout
 - [x] `public/create-listing.html` - listing creation form with client-side invalid/corrupted image rejection before upload
 - [x] `public/dashboard.html` - publication dashboard: list listings, select provider, publish, and send CSRF-protected mutating requests
 - [x] `public/register.html` - standalone registration page with strong password rules, activation-required messaging, and CSRF-protected signup
@@ -147,3 +147,4 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-10 | Active API/web/worker runtimes now import per-runtime validated config from `packages/config` | Restores fail-fast startup, removes dangerous `localhost`/secret fallbacks, and keeps JS runtime behavior aligned with the shared schema |
 | 2026-07-10 | The active API now enforces streaming request-body limits before buffering JSON | Prevents oversized auth/listing payloads and base64 image uploads from exhausting process memory |
 | 2026-07-10 | Workspace `dev`, `lint`, and `test` scripts now reflect the real runtime and real checks | Removes placeholder success paths and makes `pnpm test` a meaningful smoke test instead of `echo ok` |
+| 2026-07-10 | The main HTML frontend now keeps forgot-password collapsed by default and uses fixed thumbnail grids in edit modals | Prevents unexpected auth-panel expansion, restores spacing between listing cards, and stops single-photo previews from stretching across the modal |

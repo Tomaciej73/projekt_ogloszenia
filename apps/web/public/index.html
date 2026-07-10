@@ -37,8 +37,8 @@
     .action-row button { width: auto; flex: 1; min-width: 130px; }
     .secondary { background: rgba(255,255,255,0.1) !important; border: 1px solid rgba(255,255,255,0.2) !important; }
     .danger { background: rgba(220,38,38,0.3) !important; border: 1px solid rgba(220,38,38,0.4) !important; }
-    .listings { max-height: 500px; overflow-y: auto; }
-    .listing-row { padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+    .listings { max-height: 500px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding-right: 0.25rem; }
+    .listing-row { padding: 1rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
     .listing-row .info { flex: 1; min-width: 200px; cursor: pointer; }
     .listing-row .info:hover { opacity: 0.8; }
     .listing-row .actions { display: flex; gap: 0.5rem; }
@@ -52,6 +52,24 @@
     .detail-content h3 { color: #e94560; margin-bottom: 1rem; }
     .detail-content p { margin-bottom: 0.5rem; color: rgba(255,255,255,0.7); }
     .detail-content .price { font-size: 1.5rem; color: #f39c12; font-weight: 700; }
+    .auth-helper-link { text-align: center; margin-top: 0.75rem; }
+    .auth-helper-link a { color: rgba(255,255,255,0.6); font-size: 0.85rem; text-decoration: none; }
+    .auth-helper-link a:hover { color: #fff; text-decoration: underline; }
+    .forgot-password-panel { display: none; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem; margin-top: 1rem; }
+    .forgot-password-panel.active { display: block; }
+    .forgot-password-intro { font-size: 0.75rem; color: rgba(255,255,255,0.45); margin-bottom: 0.75rem; line-height: 1.5; }
+    .forgot-password-hint { font-size: 0.85rem; color: rgba(255,255,255,0.5); margin-bottom: 1rem; line-height: 1.5; }
+    .reset-code-section { display: none; margin-top: 1rem; }
+    .reset-code-section.active { display: block; }
+    .password-rules { font-size: 0.75rem; color: rgba(255,255,255,0.5); margin: -0.5rem 0 1rem; line-height: 1.5; }
+    .feature-list { padding-left: 1.25rem; line-height: 1.9; color: rgba(255,255,255,0.75); display: grid; gap: 0.35rem; }
+    .detail-actions, .modal-actions { margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .detail-actions button, .modal-actions button { width: auto; flex: 1 1 180px; }
+    .edit-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, 96px); justify-content: flex-start; gap: 0.75rem; margin-bottom: 0.5rem; }
+    .photo-thumb { width: 96px; height: 96px; }
+    .file-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+    .file-row input[type="file"] { flex: 1 1 220px; min-width: 0; margin-bottom: 0; padding: 8px; }
+    .file-row button { width: auto; flex: 0 0 auto; padding: 10px 18px; white-space: nowrap; }
     /* Toast */
     .toast-container { position: fixed; top: 20px; right: 20px; z-index: 2000; display: flex; flex-direction: column; gap: 0.5rem; }
     .toast { padding: 1rem 1.5rem; border-radius: 10px; color: #fff; font-weight: 600; font-size: 0.9rem; animation: slideIn 0.3s ease; max-width: 400px; }
@@ -60,6 +78,13 @@
     .toast.warning { background: rgba(245,158,11,0.9); }
     @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
     footer { text-align: center; padding: 2rem; color: rgba(255,255,255,0.3); font-size: 0.85rem; }
+    @media (max-width: 640px) {
+      .container { padding: 1rem; }
+      .panel, .detail-content { padding: 1.5rem; }
+      .detail-content { width: calc(100% - 1.5rem); max-height: 85vh; }
+      .edit-photo-grid { grid-template-columns: repeat(auto-fill, 88px); gap: 0.5rem; }
+      .photo-thumb { width: 88px; height: 88px; }
+    }
   </style>
 </head>
 <body>
@@ -67,14 +92,14 @@
   <div class="container">
     <header>
       <h1>MultiPortal Listing Manager</h1>
-      <p>Create listing drafts once — publish to multiple marketplace platforms</p>
+      <p>Create listing drafts once - publish to multiple marketplace platforms</p>
     </header>
 
     <!-- LOGGED OUT VIEW -->
     <div id="loggedOutView">
       <div class="split">
         <div class="panel">
-          <h2>🔐 Welcome</h2>
+          <h2>Welcome</h2>
           <div class="tabs">
             <div class="tab active" id="loginTab">Log In</div>
             <div class="tab" id="registerTab">Register</div>
@@ -87,20 +112,20 @@
               <input type="password" id="loginPassword" required placeholder="Your password" autocomplete="current-password">
               <button type="submit" id="loginBtn">Log In</button>
               <p id="loginAttemptsHint" style="display:none;font-size:0.75rem;color:rgba(255,255,255,0.55);margin-top:0.75rem"></p>
-              <p style="text-align:center;margin-top:0.75rem"><a href="#" id="forgotPasswordLink" style="color:rgba(255,255,255,0.5);font-size:0.85rem">Forgot password?</a></p>
+              <p class="auth-helper-link"><a href="#" id="forgotPasswordLink">Forgot password?</a></p>
             </form>
-            <div id="forgotPasswordForm" style="display:none;border-top:1px solid rgba(255,255,255,0.1);padding-top:1rem;margin-top:1rem">
-              <p style="font-size:0.75rem;color:rgba(255,255,255,0.45);margin-bottom:0.75rem">If your account is inactive or locked, this reset flow will restore access after you set a new password.</p>
-              <p style="font-size:0.85rem;color:rgba(255,255,255,0.5);margin-bottom:1rem">Enter your email — you will receive a reset code via email.</p>
+            <div id="forgotPasswordForm" class="forgot-password-panel">
+              <p class="forgot-password-intro">If your account is inactive or locked, this reset flow will restore access after you set a new password.</p>
+              <p class="forgot-password-hint">Enter your email - you will receive a reset code via email.</p>
               <label>Email</label>
               <input type="email" id="forgotEmail" required placeholder="you@example.com">
               <button type="button" id="forgotBtn">Send Reset Code</button>
-              <div id="resetCodeSection" style="display:none;margin-top:1rem">
+              <div id="resetCodeSection" class="reset-code-section">
                 <label>Reset Code (from your email)</label>
                 <input type="text" id="resetCode" required inputmode="numeric" maxlength="6" pattern="[0-9]{6}" title="Enter the 6-digit code from your email." placeholder="Enter the 6-digit reset code">
                 <label>New Password</label>
                 <input type="password" id="resetPassword" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,128}" title="Use at least 8 characters with uppercase, lowercase, number, and special character." placeholder="New password (min 8 chars)" autocomplete="new-password">
-                <p style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin:-0.5rem 0 1rem">Use at least 8 characters with uppercase, lowercase, number, and special character.</p>
+                <p class="password-rules">Use at least 8 characters with uppercase, lowercase, number, and special character.</p>
                 <button type="button" id="resetPwdBtn">Reset Password</button>
               </div>
             </div>
@@ -113,21 +138,21 @@
               <input type="email" id="regEmail" required placeholder="you@example.com" autocomplete="email">
               <label>Password</label>
               <input type="password" id="regPassword" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,128}" title="Use at least 8 characters with uppercase, lowercase, number, and special character." placeholder="Min. 8 characters, uppercase, lowercase, number, special character" autocomplete="new-password">
-              <p style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin:-0.5rem 0 1rem">Use at least 8 characters with uppercase, lowercase, number, and special character.</p>
-              <p style="font-size:0.75rem;color:rgba(255,255,255,0.45);margin:-0.35rem 0 1rem">After registration, activate your account using the email link we send you.</p>
+              <p class="password-rules">Use at least 8 characters with uppercase, lowercase, number, and special character.</p>
+              <p class="forgot-password-intro" style="margin-top:-0.35rem">After registration, activate your account using the email link we send you.</p>
               <button type="submit" id="regBtn">Create Account</button>
             </form>
           </div>
         </div>
         <div class="panel">
-          <h2>📦 Features</h2>
-          <ul style="line-height:2.2;color:rgba(255,255,255,0.75)">
-            <li>📝 Create listing drafts once</li>
-            <li>📤 Publish to multiple platforms</li>
-            <li>✅ OLX · Vinted Pro · Facebook Marketplace</li>
-            <li>📊 Track publication status per platform</li>
-            <li>🔄 Update, unpublish, relist</li>
-            <li>🔒 Secure authentication</li>
+          <h2>Features</h2>
+          <ul class="feature-list">
+            <li>Create listing drafts once</li>
+            <li>Publish to multiple platforms</li>
+            <li>OLX - Vinted Pro - Facebook Marketplace</li>
+            <li>Track publication status per platform</li>
+            <li>Update, unpublish, and relist</li>
+            <li>Secure authentication</li>
           </ul>
         </div>
       </div>
@@ -137,20 +162,20 @@
     <div id="loggedInView" class="dashboard">
       <div class="split">
         <div class="panel" style="max-width:400px">
-          <h2>👤 Account</h2>
-          <p style="margin-bottom:0.5rem"><strong id="userName">—</strong></p>
-          <p style="color:rgba(255,255,255,0.5);font-size:0.9rem" id="userEmail">—</p>
-          <button class="secondary" style="margin-top:1.5rem" id="logoutBtn">🚪 Log Out</button>
+          <h2>Account</h2>
+          <p style="margin-bottom:0.5rem"><strong id="userName">-</strong></p>
+          <p style="color:rgba(255,255,255,0.5);font-size:0.9rem" id="userEmail">-</p>
+          <button class="secondary" style="margin-top:1.5rem" id="logoutBtn">Log Out</button>
         </div>
         <div class="panel">
-          <h2>📊 My Listings</h2>
+          <h2>My Listings</h2>
           <div class="stats">
-            <div class="stat"><div class="val" id="listingCount">—</div><div class="lbl">Drafts</div></div>
+            <div class="stat"><div class="val" id="listingCount">-</div><div class="lbl">Drafts</div></div>
             <div class="stat"><div class="val" id="providerCount">3</div><div class="lbl">Providers</div></div>
           </div>
           <div class="action-row">
-            <button id="newListingBtn">📝 New Listing</button>
-            <button class="secondary" id="refreshListingsBtn">🔄 Refresh</button>
+            <button id="newListingBtn">New Listing</button>
+            <button class="secondary" id="refreshListingsBtn">Refresh</button>
           </div>
           <div class="listings" id="listingsList">
             <p style="color:rgba(255,255,255,0.4);padding:1rem">Loading...</p>
@@ -169,7 +194,7 @@
       <div class="detail-content" id="editContent"></div>
     </div>
   </div>
-  <footer>MultiPortal Listing Manager v0.3.0 · Development Mode</footer>
+  <footer>MultiPortal Listing Manager v0.3.0 - Development Mode</footer>
 
   <script>
     const API = '';
@@ -234,6 +259,25 @@
 
     function normalizeResetCode(value) {
       return String(value || '').replace(/\s+/g, '').trim();
+    }
+
+    function setForgotPasswordOpen(isOpen) {
+      const form = document.getElementById('forgotPasswordForm');
+      if (!form) return;
+      form.classList.toggle('active', Boolean(isOpen));
+      if (!isOpen) setResetCodeSectionOpen(false);
+    }
+
+    function setResetCodeSectionOpen(isOpen) {
+      const section = document.getElementById('resetCodeSection');
+      if (!section) return;
+      section.classList.toggle('active', Boolean(isOpen));
+    }
+
+    function primeForgotPassword(email = '') {
+      const forgotEmail = document.getElementById('forgotEmail');
+      if (forgotEmail && email) forgotEmail.value = email;
+      setResetCodeSectionOpen(false);
     }
 
     function switchTab(name) {
@@ -341,12 +385,13 @@
             setLoginAttemptsHint('');
           }
           if (res.status === 403 && /not active/i.test(data.error || '')) {
-            document.getElementById('forgotEmail').value = loginEmail;
-            document.getElementById('forgotPasswordForm').style.display = 'block';
+            primeForgotPassword(loginEmail);
+            setLoginAttemptsHint('Account inactive. Use Forgot password to activate it.', 'warning');
+            toast(data.error || 'Account inactive. Use Forgot password to activate it.', 'warning');
+            return;
           }
           if (res.status === 423 || data.accountLocked) {
-            document.getElementById('forgotEmail').value = loginEmail;
-            document.getElementById('forgotPasswordForm').style.display = 'block';
+            primeForgotPassword(loginEmail);
             setLoginAttemptsHint('Account locked. Use Forgot password to unlock it.', 'error');
             toast(data.error || 'Account locked. Use Forgot password to unlock it.', 'warning');
             return;
@@ -449,7 +494,7 @@
 
         if (index === 0) {
           const badge = document.createElement('span');
-          badge.textContent = '★ Primary';
+          badge.textContent = 'Primary';
           badge.style.cssText = 'position:absolute;top:4px;left:4px;background:#e94560;color:#fff;font-size:0.6rem;padding:2px 6px;border-radius:4px';
           item.appendChild(badge);
         }
@@ -681,9 +726,9 @@
         try {
           const url = await uploadPhotoForListing(file, listingId);
           urls.push(url);
-          toast('📷 Uploaded: ' + file.name, 'success');
+          toast('Uploaded: ' + file.name, 'success');
         } catch(e) {
-          toast('❌ Failed: ' + file.name + ' - ' + e.message, 'error');
+          toast('Failed: ' + file.name + ' - ' + e.message, 'error');
         }
       }
       if (urls.length > 0) {
@@ -710,12 +755,12 @@
           const photoUrls = l.photoUrls || [];
           const photosSection = `
             <label style="margin-top:1rem">Photos (${photoUrls.length})</label>
-            <div id="editPhotoGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:0.5rem;margin-bottom:0.5rem"></div>
-            <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
-              <input type="file" id="editPhotoInput" accept="image/*" multiple style="flex:1;margin-bottom:0;padding:8px">
-              <button type="button" id="editAddPhotosBtn" style="width:auto;padding:8px 16px;white-space:nowrap">📷 Add</button>
+            <div id="editPhotoGrid" class="edit-photo-grid"></div>
+            <div class="file-row">
+              <input type="file" id="editPhotoInput" accept="image/*" multiple>
+              <button type="button" id="editAddPhotosBtn">Add</button>
             </div>
-            <p style="font-size:0.7rem;color:rgba(255,255,255,0.4);margin-top:-0.5rem;margin-bottom:1rem">Drag to reorder · Click ★ to set as primary</p>
+            <p style="font-size:0.7rem;color:rgba(255,255,255,0.4);margin-top:-0.5rem;margin-bottom:1rem">Drag to reorder - Click * to set as primary</p>
           `;
 
           document.getElementById('editContent').innerHTML = `
@@ -735,8 +780,8 @@
               <option value="archived" ${l.status==='archived'?'selected':''}>Archived</option>
             </select>
             ${photosSection}
-            <div style="margin-top:1rem;display:flex;gap:0.5rem">
-              <button id="saveEditBtn">💾 Save</button>
+            <div class="modal-actions">
+              <button id="saveEditBtn">Save</button>
               <button class="secondary" id="cancelEditBtn">Cancel</button>
             </div>
           `;
@@ -786,9 +831,14 @@
     }
 
     // ── FORGOT PASSWORD ──
-    function showForgotPassword() {
-      const f = document.getElementById('forgotPasswordForm');
-      f.style.display = f.style.display === 'none' ? 'block' : 'none';
+    function showForgotPassword(forceOpen = null) {
+      const form = document.getElementById('forgotPasswordForm');
+      if (!form) return;
+      const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : !form.classList.contains('active');
+      setForgotPasswordOpen(shouldOpen);
+      if (shouldOpen) {
+        document.getElementById('forgotEmail')?.focus();
+      }
     }
 
     async function handleForgotPassword() {
@@ -801,7 +851,8 @@
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to send reset code');
-        document.getElementById('resetCodeSection').style.display = 'block';
+        setForgotPasswordOpen(true);
+        setResetCodeSectionOpen(true);
         toast(data.message || 'Reset code sent. Check your email.', 'success');
       } catch(e) { toast(e.message, 'error'); }
       finally { btn.disabled = false; btn.textContent = 'Send Reset Code'; }
@@ -833,8 +884,7 @@
         document.getElementById('loginEmail').value = forgotEmail;
         document.getElementById('loginPassword').value = '';
         setLoginAttemptsHint('');
-        document.getElementById('forgotPasswordForm').style.display = 'none';
-        document.getElementById('resetCodeSection').style.display = 'none';
+        setForgotPasswordOpen(false);
         document.getElementById('forgotEmail').value = '';
         document.getElementById('resetCode').value = '';
         document.getElementById('resetPassword').value = '';
@@ -884,13 +934,13 @@
 
           const meta = document.createElement('small');
           meta.style.color = 'rgba(255,255,255,0.5)';
-          meta.appendChild(document.createTextNode(`${Number(l.price).toFixed(2)} ${l.currency} · `));
+          meta.appendChild(document.createTextNode(`${Number(l.price).toFixed(2)} ${l.currency} - `));
 
           const badge = document.createElement('span');
           badge.className = `status-badge status-${l.status}`;
           badge.textContent = l.status;
           meta.appendChild(badge);
-          meta.appendChild(document.createTextNode(` · ${photos.length} 📷`));
+          meta.appendChild(document.createTextNode(` - ${photos.length} photos`));
           info.appendChild(meta);
           row.appendChild(info);
 
@@ -899,19 +949,19 @@
 
           const viewBtn = document.createElement('button');
           viewBtn.className = 'secondary';
-          viewBtn.textContent = '👁 View';
+          viewBtn.textContent = 'View';
           viewBtn.addEventListener('click', () => showDetail(l.id));
           actions.appendChild(viewBtn);
 
           const editBtn = document.createElement('button');
           editBtn.className = 'secondary';
-          editBtn.textContent = '✏️ Edit';
+          editBtn.textContent = 'Edit';
           editBtn.addEventListener('click', () => showEdit(l.id));
           actions.appendChild(editBtn);
 
           const deleteBtn = document.createElement('button');
           deleteBtn.className = 'danger';
-          deleteBtn.textContent = '🗑 Delete';
+          deleteBtn.textContent = 'Delete';
           deleteBtn.addEventListener('click', () => deleteListing(l.id));
           actions.appendChild(deleteBtn);
 
@@ -942,8 +992,8 @@
         <div id="detailGallery"></div>
         <p style="font-size:0.75rem;color:rgba(255,255,255,0.3);margin-top:0.5rem"><strong>Created:</strong> ${new Date(l.createdAt).toLocaleString()}</p>
         <p style="font-size:0.75rem;color:rgba(255,255,255,0.3)"><strong>ID:</strong> ${l.id}</p>
-        <div style="margin-top:1rem;display:flex;gap:0.5rem">
-          <button id="detailEditBtn">✏️ Edit</button>
+        <div class="detail-actions">
+          <button id="detailEditBtn">Edit</button>
           <button class="secondary" id="detailCloseBtn">Close</button>
         </div>
       `;
@@ -1022,7 +1072,7 @@
         thumb.appendChild(img);
 
         const deleteBtn = document.createElement('button');
-        deleteBtn.textContent = '×';
+        deleteBtn.textContent = 'x';
         deleteBtn.title = 'Delete photo';
         deleteBtn.style.cssText = 'position:absolute;top:4px;right:4px;width:24px;height:24px;background:rgba(220,38,38,0.9);border:none;border-radius:50%;color:#fff;font-size:14px;line-height:24px;padding:0;cursor:pointer';
         deleteBtn.addEventListener('click', (event) => {
@@ -1033,12 +1083,12 @@
 
         if (i === 0) {
           const badge = document.createElement('span');
-          badge.textContent = '★ Primary';
+          badge.textContent = 'Primary';
           badge.style.cssText = 'position:absolute;bottom:4px;left:4px;background:#e94560;color:#fff;font-size:0.55rem;padding:2px 6px;border-radius:4px';
           thumb.appendChild(badge);
         } else {
           const primaryBtn = document.createElement('button');
-          primaryBtn.textContent = '★';
+          primaryBtn.textContent = '*';
           primaryBtn.title = 'Set as primary';
           primaryBtn.style.cssText = 'position:absolute;bottom:4px;right:4px;width:22px;height:22px;background:rgba(0,0,0,0.6);border:none;border-radius:50%;color:#fff;font-size:12px;line-height:22px;padding:0;cursor:pointer';
           primaryBtn.addEventListener('click', (event) => {
