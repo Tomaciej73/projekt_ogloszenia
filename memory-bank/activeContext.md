@@ -14,6 +14,7 @@ A fully working application is running: user registration/login with HttpOnly co
 - **Workspace scripts are now honest smoke checks:** Root `pnpm test` and package-level `test` / `lint` scripts now run real type/syntax checks, while app `dev` scripts point at the active Node.js runtimes instead of placeholder echoes.
 - **Provider roadmap:** OLX (1st) -> Vinted Pro (2nd) -> Facebook Marketplace (3rd). All `research_required`.
 - **Version policy:** Latest LTS for runtimes, latest stable for frameworks, explicit SemVer when pinning/documenting versions, no `latest` Docker tags, verify from official sources.
+- **Documentation discipline:** Every meaningful change must be documented in the appropriate `memory-bank` file, and every version-related change must use and record explicit SemVer values or a deliberate SemVer range.
 - **Pinned package manager:** pnpm@11.10.0
 - **Workspace protocol:** `workspace:*` for inter-package dependencies
 - **Security:** All credentials from `.env` via dotenv. No hardcoded secrets in source code. PBKDF2+SHA512+16B salt for passwords. Browser auth now uses an HttpOnly same-site cookie carrying the signed JWT instead of storing the JWT in `localStorage`, and mutating requests require a same-origin CSRF token (`/auth/csrf` + `X-CSRF-Token`). New accounts are inactive until activated by email link or by the forgot-password activation flow. Accounts lock after 5 failed login attempts and are unlocked only by completing the password reset flow. Password reset requires a registered email, a one-time 6-digit code whose SHA-256 hash is stored in PostgreSQL, and a strong password (uppercase, lowercase, number, special character). Image uploads now accept only validated JPG/PNG/GIF/WebP payloads after server-side MIME sniffing and structural checks; direct presigned uploads are disabled in the active runtime.
@@ -38,6 +39,7 @@ A fully working application is running: user registration/login with HttpOnly co
 
 ## Recent Changes
 
+- 2026-07-10: Strengthened the working rule that every meaningful implementation/process/version change must be explicitly documented in `memory-bank`, with SemVer notation recorded whenever versions are pinned or updated.
 - 2026-07-10: Recorded an explicit SemVer rule in the technical context, so future package/runtime/image version pins must use clear SemVer values or deliberate SemVer ranges instead of ambiguous version notation.
 - 2026-07-10: Refined the active `public/index.html` UI so the forgot-password panel stays collapsed until the user opens it, locked/inactive-login hints no longer auto-expand the reset form, listing rows have visible spacing again, and edit-modal photo thumbnails stay fixed-size instead of stretching to full width.
 - 2026-07-10: Aligned package scripts with the real runtime stack - root `pnpm dev` now targets the active API/web/worker processes, placeholder `echo ok` tests were replaced with real type/syntax smoke checks, and the Next/Nest scaffold sources no longer hardcode `localhost` for API/media URLs.
