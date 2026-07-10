@@ -750,6 +750,35 @@ function getUserId(req) {
   return verifyToken(cookies[AUTH_COOKIE_NAME] || "");
 }
 
+function respondAuthenticationRequired(req, res, { clearCookie = false } = {}) {
+  return jsonResponse(
+    res,
+    401,
+    { error: "Authentication required" },
+    clearCookie ? { "Set-Cookie": buildClearedAuthCookie(req) } : {},
+  );
+}
+
+async function requireAuthenticatedUser(req, res, select = { id: true }) {
+  const uid = getUserId(req);
+  if (!uid) {
+    respondAuthenticationRequired(req, res);
+    return null;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: uid },
+    select,
+  });
+
+  if (!user) {
+    respondAuthenticationRequired(req, res, { clearCookie: true });
+    return null;
+  }
+
+  return user;
+}
+
 function isMutationMethod(method) {
   return method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH";
 }
@@ -1517,9 +1546,12 @@ const server = http.createServer(async (req, res) => {
 
     // ── Auth: Me ──
     if (path === "/auth/me" && req.method === "GET") {
-      const uid = getUserId(req);
-      if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
-      const user = await prisma.user.findUnique({ where: { id: uid } });
+      const user = await requireAuthenticatedUser(req, res, {
+        id: true,
+        email: true,
+        name: true,
+      });
+      if (!user) return;
       return jsonResponse(res, 200, { user: { id: user.id, email: user.email, name: user.name } });
     }
 
@@ -1538,8 +1570,9 @@ const server = http.createServer(async (req, res) => {
 
     // ── Listings ──
     if (path === "/listings") {
-      const uid = getUserId(req);
-      if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
+      const currentUser = await requireAuthenticatedUser(req, res);
+      if (!currentUser) return;
+      const uid = currentUser.id;
 
       if (req.method === "GET") {
         const listings = await prisma.listingDraft.findMany({
@@ -1581,15 +1614,15 @@ const server = http.createServer(async (req, res) => {
     const listingMatch = path.match(/^\/listings\/([^/]+)$/);
     if (listingMatch) {
       const id = listingMatch[1];
-      const uid = getUserId(req);
+      const currentUser = await requireAuthenticatedUser(req, res);
+      if (!currentUser) return;
+      const uid = currentUser.id;
       if (req.method === "GET") {
-        if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
         const listing = await prisma.listingDraft.findFirst({ where: { id, userId: uid } });
         return listing
           ? jsonResponse(res, 200, { listing: normalizeListingResponse(req, listing) })
           : jsonResponse(res, 404, { error: "Listing not found" });
       }
-      if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
       if (req.method === "PUT") {
         const body = await parseJsonBodyOrRespond(req, res);
         if (body === null) return;
@@ -1617,8 +1650,9 @@ const server = http.createServer(async (req, res) => {
     if (photosMatch) {
       const listingId = photosMatch[1];
       const photoIndex = photosMatch[2] !== undefined ? parseInt(photosMatch[2], 10) : undefined;
-      const uid = getUserId(req);
-      if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
+      const currentUser = await requireAuthenticatedUser(req, res);
+      if (!currentUser) return;
+      const uid = currentUser.id;
 
       const listing = await prisma.listingDraft.findUnique({ where: { id: listingId, userId: uid } });
       if (!listing) return jsonResponse(res, 404, { error: "Listing not found" });
@@ -1659,8 +1693,9 @@ const server = http.createServer(async (req, res) => {
 
     // ── Publication Jobs ──
     if (path === "/publication-jobs" && req.method === "POST") {
-      const uid = getUserId(req);
-      if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
+      const currentUser = await requireAuthenticatedUser(req, res);
+      if (!currentUser) return;
+      const uid = currentUser.id;
       const body = await parseJsonBodyOrRespond(req, res);
       if (body === null) return;
       if (!body.listingId || typeof body.listingId !== "string") {
@@ -1712,8 +1747,9 @@ const server = http.createServer(async (req, res) => {
 
     const jobMatch = path.match(/^\/publication-jobs\/([^/]+)$/);
     if (jobMatch && req.method === "GET") {
-      const uid = getUserId(req);
-      if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
+      const currentUser = await requireAuthenticatedUser(req, res);
+      if (!currentUser) return;
+      const uid = currentUser.id;
       const job = await prisma.publicationJob.findFirst({
         where: {
           id: jobMatch[1],
@@ -1733,8 +1769,9 @@ const server = http.createServer(async (req, res) => {
 
     // ── Media Upload (direct server-side, base64) ──
     if (path === "/media/upload" && req.method === "POST") {
-      const uid = getUserId(req);
-      if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
+      const currentUser = await requireAuthenticatedUser(req, res);
+      if (!currentUser) return;
+      const uid = currentUser.id;
 
       const body = await parseJsonBodyOrRespond(req, res, { limitBytes: UPLOAD_JSON_BODY_LIMIT_BYTES });
       if (body === null) return;
@@ -1781,8 +1818,9 @@ const server = http.createServer(async (req, res) => {
 
     // ── Marketplace Accounts ──
     if (path === "/marketplace-accounts") {
-      const uid = getUserId(req);
-      if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
+      const currentUser = await requireAuthenticatedUser(req, res);
+      if (!currentUser) return;
+      const uid = currentUser.id;
       if (req.method === "GET") {
         const accounts = await prisma.marketplaceAccount.findMany({ where: { userId: uid, isActive: true }, include: { marketplaceProvider: true } });
         return jsonResponse(res, 200, { accounts });

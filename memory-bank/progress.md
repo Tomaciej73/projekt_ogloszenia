@@ -74,6 +74,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Account lockout after 5 failed login attempts, cleared only by successful password reset
 - [x] One-time 6-digit password reset codes with 1-hour expiry and DB-backed hashed persistence
 - [x] Auth abuse protection via configurable rate limiting on `/auth/*` and a DB-backed forgot-password resend cooldown
+- [x] Protected API routes now verify that the authenticated user still exists in PostgreSQL, so stale cookies after a DB reset are cleared with `401` instead of crashing `/auth/me`
 - [x] SMTP startup verification plus delivery-result logging to separate relay acceptance from inbox-side deliverability issues
 - [x] SMTP runtime now supports both `587` STARTTLS and `465` SSL/TLS via `SMTP_SECURE`
 - [x] SMTP debug transport logging disabled to avoid leaking reset codes or mail transport details in container logs
