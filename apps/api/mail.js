@@ -1,12 +1,12 @@
 const nodemailer = require("nodemailer");
+const { config } = require("./runtime-config");
 
-const DEFAULT_SMTP_FROM = "noreply@manager.multiportal.site";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const SMTP_HOST = String(process.env.SMTP_HOST || "").trim();
-const SMTP_PORT = parseInt(process.env.SMTP_PORT, 10);
-const SMTP_USER = String(process.env.SMTP_USER || "").trim();
-const SMTP_SECURE = String(process.env.SMTP_SECURE || "").trim().toLowerCase() === "true" || SMTP_PORT === 465;
-const SMTP_REQUIRE_TLS = SMTP_SECURE ? false : String(process.env.SMTP_REQUIRE_TLS || "true").trim().toLowerCase() !== "false";
+const SMTP_HOST = config.SMTP_HOST;
+const SMTP_PORT = config.SMTP_PORT;
+const SMTP_USER = config.SMTP_USER;
+const SMTP_SECURE = config.SMTP_SECURE ?? SMTP_PORT === 465;
+const SMTP_REQUIRE_TLS = SMTP_SECURE ? false : config.SMTP_REQUIRE_TLS ?? true;
 const SMTP_CONNECTION_TIMEOUT_MS = 15000;
 const SMTP_GREETING_TIMEOUT_MS = 10000;
 const SMTP_SOCKET_TIMEOUT_MS = 20000;
@@ -20,8 +20,8 @@ const transporter = nodemailer.createTransport({
   greetingTimeout: SMTP_GREETING_TIMEOUT_MS,
   socketTimeout: SMTP_SOCKET_TIMEOUT_MS,
   auth: {
-    user: SMTP_USER || "",
-    pass: process.env.SMTP_PASSWORD || "",
+    user: SMTP_USER,
+    pass: config.SMTP_PASSWORD,
   },
   tls: {
     rejectUnauthorized: false,
@@ -37,21 +37,10 @@ function getEmailDomain(email) {
   return normalizeEmail(email).split("@")[1] || "";
 }
 
-const EXPLICIT_FROM = normalizeEmail(process.env.SMTP_FROM);
-const FROM = EXPLICIT_FROM || DEFAULT_SMTP_FROM;
-const FROM_NAME = String(process.env.SMTP_FROM_NAME || "MultiPortal").trim() || "MultiPortal";
-const REPLY_TO = normalizeEmail(process.env.SMTP_REPLY_TO) || FROM;
-const SENDER = normalizeEmail(process.env.SMTP_SENDER);
-
-if (!EXPLICIT_FROM) {
-  console.warn(
-    'Mail config warning: SMTP_FROM is not set, so the default sender "noreply@manager.multiportal.site" will be used. Make sure this mailbox really exists on your SMTP relay and has aligned SPF/DKIM/DMARC for inbox delivery.',
-  );
-}
-
-if (!EXPLICIT_FROM) {
-  console.warn("Mail config warning: SMTP_FROM is missing or invalid. Using the default placeholder sender address.");
-}
+const FROM = normalizeEmail(config.SMTP_FROM);
+const FROM_NAME = String(config.SMTP_FROM_NAME || "MultiPortal").trim() || "MultiPortal";
+const REPLY_TO = normalizeEmail(config.SMTP_REPLY_TO) || FROM;
+const SENDER = normalizeEmail(config.SMTP_SENDER);
 
 if (!EMAIL_RE.test(SMTP_USER) && !SENDER) {
   console.warn(
@@ -120,8 +109,8 @@ function buildEmailHtml({ subject, headline, firstName, intro, contentHtml, foot
           <tr>
             <td style="padding:1rem 2rem 2rem;border-top:1px solid rgba(255,255,255,0.08)">
               <p style="margin:0;font-size:0.75rem;color:rgba(255,255,255,0.3);text-align:center;line-height:1.5">
-                MultiPortal Listing Manager · This is an automated message, please do not reply.<br>
-                © 2026 MultiPortal. All rights reserved.
+                MultiPortal Listing Manager - This is an automated message, please do not reply.<br>
+                (c) 2026 MultiPortal. All rights reserved.
               </p>
             </td>
           </tr>

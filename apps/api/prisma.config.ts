@@ -1,6 +1,7 @@
 import { defineConfig } from "prisma/config";
+const databaseUrl = process.env["DATABASE_URL"] ?? "";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
-  datasourceUrl: process.env["DATABASE_URL"] ?? "postgresql://multiportal:multiportal@localhost:5432/multiportal",
+  datasourceUrl: databaseUrl,
 });

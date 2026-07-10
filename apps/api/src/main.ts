@@ -1,10 +1,10 @@
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { AppModule } from "./app.module";
-import { loadConfig } from "@multiportal/config";
+import { loadApiConfig } from "@multiportal/config";
 
 async function bootstrap(): Promise<void> {
-  const config = loadConfig();
+  const config = loadApiConfig();
 
   const app = await NestFactory.create(AppModule, {
     logger:

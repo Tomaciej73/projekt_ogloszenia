@@ -113,4 +113,4 @@ Access:
 
 ## Handoff
 
-- At the end of a completed implementation task, include an example `git commit -m "..."` message in the handoff response.
+- At the end of a completed implementation task, include an example `git commit -m "..."` message in Polish in the handoff response.

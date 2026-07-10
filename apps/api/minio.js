@@ -1,21 +1,30 @@
 const { Client } = require("minio");
+const { config } = require("./runtime-config");
 
-// MinIO client — all config from environment variables
+const s3Endpoint = new URL(config.S3_ENDPOINT);
+const publicEndpoint = (config.S3_PUBLIC_ENDPOINT || config.S3_ENDPOINT).replace(/\/$/, "");
+const s3EndpointPort = s3Endpoint.port
+  ? Number.parseInt(s3Endpoint.port, 10)
+  : s3Endpoint.protocol === "https:"
+    ? 443
+    : 80;
+
 const minioClient = new Client({
-  endPoint: (process.env.S3_ENDPOINT || "http://localhost:9000").replace(/https?:\/\//, "").replace(/:\d+$/, ""),
-  port: parseInt((process.env.S3_ENDPOINT || "http://localhost:9000").match(/:(\d+)$/)?.[1] || "9000", 10),
-  useSSL: false,
-  accessKey: process.env.S3_ACCESS_KEY || "minio_admin",
-  secretKey: process.env.S3_SECRET_KEY || "",
-  region: process.env.S3_REGION || "us-east-1",
+  endPoint: s3Endpoint.hostname,
+  port: s3EndpointPort,
+  useSSL: s3Endpoint.protocol === "https:",
+  accessKey: config.S3_ACCESS_KEY,
+  secretKey: config.S3_SECRET_KEY,
+  region: config.S3_REGION,
+  pathStyle: config.S3_FORCE_PATH_STYLE,
 });
 
-const BUCKET = process.env.S3_BUCKET || "multiportal-media";
+const BUCKET = config.S3_BUCKET;
 
 async function ensureBucket() {
   const exists = await minioClient.bucketExists(BUCKET);
   if (!exists) {
-    await minioClient.makeBucket(BUCKET, process.env.S3_REGION || "us-east-1");
+    await minioClient.makeBucket(BUCKET, config.S3_REGION);
     console.log(`Created bucket: ${BUCKET}`);
   }
 
@@ -45,13 +54,9 @@ async function getPresignedUploadUrl(key, contentType, expiry = 3600) {
   await ensureBucket();
 
   const uploadUrl = await minioClient.presignedPutObject(BUCKET, key, expiry);
-
-  // Replace internal Docker hostname (minio) with public endpoint for browser access
-  const internalHost = `${(process.env.S3_ENDPOINT).replace(/https?:\/\//, "")}`;
-  const publicEndpoint = process.env.S3_PUBLIC_ENDPOINT || process.env.S3_ENDPOINT;
-  const publicUploadUrl = uploadUrl.replace(internalHost, publicEndpoint.replace(/https?:\/\//, ""));
-
-  const publicUrl = `${publicEndpoint}/${BUCKET}/${key}`;
+  const publicUploadHost = new URL(publicEndpoint).host;
+  const publicUploadUrl = uploadUrl.replace(s3Endpoint.host, publicUploadHost);
+  const publicUrl = new URL(`${BUCKET}/${key}`, `${publicEndpoint}/`).toString();
 
   return { uploadUrl: publicUploadUrl, publicUrl, key };
 }

@@ -1,8 +1,7 @@
-require("dotenv").config();
-
 const { Queue, Worker } = require("bullmq");
+const { config } = require("./runtime-config");
 
-const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6739";
+const REDIS_URL = config.REDIS_URL;
 
 // Publication queue
 const publicationQueue = new Queue("publication", {

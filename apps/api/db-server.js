@@ -1,5 +1,3 @@
-require("dotenv").config();
-
 const http = require("http");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
@@ -7,16 +5,17 @@ const { Queue } = require("bullmq");
 const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
+const { config } = require("./runtime-config");
 const { ensureBucket, minioClient, BUCKET } = require("./minio");
 const { sendPasswordResetEmail, sendAccountActivationEmail, formatMailDeliveryResult } = require("./mail");
 
-const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6739";
+const REDIS_URL = config.REDIS_URL;
 const publicationQueue = new Queue("publication", { connection: { url: REDIS_URL } });
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
+const JWT_SECRET = config.JWT_SECRET;
 const JWT_EXPIRY = "24h";
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool({ connectionString: config.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
@@ -187,16 +186,20 @@ function isMatchingActivationToken(expectedHash, actualToken) {
 }
 
 function getApiBaseUrl(req) {
-  if (process.env.API_PUBLIC_URL) return process.env.API_PUBLIC_URL.replace(/\/$/, "");
+  if (config.API_PUBLIC_URL) return config.API_PUBLIC_URL.replace(/\/$/, "");
   const protocol = req.headers["x-forwarded-proto"] || "http";
   return `${protocol}://${req.headers.host}`;
 }
 
 function getWebBaseUrl(req) {
-  if (process.env.WEB_PUBLIC_URL) return process.env.WEB_PUBLIC_URL.replace(/\/$/, "");
+  if (config.WEB_PUBLIC_URL) return config.WEB_PUBLIC_URL.replace(/\/$/, "");
   const protocol = req.headers["x-forwarded-proto"] || "http";
-  const hostname = (req.headers.host || `localhost:${process.env.API_PORT || 3001}`).split(":")[0];
-  return `${protocol}://${hostname}:${process.env.WEB_PORT || 3000}`;
+  const hostHeader = String(req.headers.host || "").trim();
+  if (!hostHeader) {
+    return getApiBaseUrl(req);
+  }
+  const hostname = hostHeader.split(":")[0];
+  return `${protocol}://${hostname}:${config.WEB_PORT}`;
 }
 
 function getMediaBaseUrl(req) {
@@ -1423,4 +1426,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(3001, () => console.log("API ready at http://localhost:3001 (v0.3.0)"));
+server.listen(config.API_PORT, () => console.log(`API ready at http://localhost:${config.API_PORT} (v0.3.0)`));

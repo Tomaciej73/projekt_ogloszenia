@@ -1,8 +1,9 @@
 import { defineConfig } from "prisma/config";
+const databaseUrl = process.env["DATABASE_URL"] ?? "";
 
 export default defineConfig({
   schema: "apps/api/prisma/schema.prisma",
   datasource: {
-    url: process.env["DATABASE_URL"] ?? "",
+    url: databaseUrl,
   },
 });

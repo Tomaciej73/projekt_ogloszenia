@@ -21,9 +21,12 @@
 ## Runtime Entry Points
 
 - `apps/web/front-server.js` serves static pages from `apps/web/public/`
+- `apps/web/runtime-config.js` loads the validated web runtime config from `packages/config`
 - `apps/api/docker-entrypoint.sh` runs `prisma migrate deploy` and then starts `apps/api/db-server.js`
 - `apps/api/db-server.js` handles the active REST API runtime
+- `apps/api/runtime-config.js` loads the validated API runtime config from `packages/config`
 - `apps/worker/worker.js` processes BullMQ jobs
+- `apps/worker/runtime-config.js` loads the validated worker runtime config from `packages/config`
 
 Next.js and NestJS source scaffolding remains in the repository, but those entry points are not the active runtime today.
 
@@ -102,13 +105,14 @@ Key `.env` groups:
 - **Database:** `DATABASE_URL`
 - **Redis:** `REDIS_URL`
 - **Storage:** `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
-- **Web media proxy:** optional `MINIO_PROXY_URL`
+- **Web proxy:** `API_PROXY_URL`, `MINIO_PROXY_URL`
 - **Auth:** `JWT_SECRET`, `SESSION_SECRET`, `CSRF_SECRET`
 - **SMTP:** `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`
 - **SMTP transport mode:** optional `SMTP_SECURE` plus optional `SMTP_REQUIRE_TLS`
 - **Encryption:** `TOKEN_ENCRYPTION_KEY`
 - **App:** `API_PORT`, `WEB_PORT`, `NODE_ENV`, `LOG_LEVEL`, `API_PROXY_URL`, optional `API_PUBLIC_URL`, optional `WEB_PUBLIC_URL`
 - **Provider OAuth (future):** `OLX_CLIENT_ID`, `OLX_CLIENT_SECRET`, etc.
+- `.env` values are loaded through `dotenv`, so concrete URLs must be written directly; shell-style interpolation inside values such as `http://localhost:${MINIO_API_PORT}` is not expanded by the active runtime.
 
 ## Package Structure
 
@@ -154,7 +158,7 @@ packages/config/
 
 ## Auth and Security Notes
 
-- Authentication uses JWT Bearer tokens.
+- Browser authentication uses an HttpOnly same-site `mp_auth` cookie that carries the signed JWT; browser mutations also require a same-origin CSRF token.
 - Registration creates inactive accounts until email activation is completed.
 - Accounts lock after 5 failed login attempts and stay locked until the password reset flow completes successfully.
 - Account activation links use DB-backed token hashes with 1-hour expiry.
@@ -163,7 +167,8 @@ packages/config/
 - Reset codes are stored in PostgreSQL as SHA-256 hashes scoped to the user ID, with expiry, request timestamp, and invalid-attempt counter.
 - Login responses can return DB-backed `remainingLoginAttempts` and `accountLocked` flags so the frontend stays synchronized with the actual lock state.
 - Inactive accounts can also be activated through the forgot-password reset flow after mailbox verification.
-- Mailer warns at startup when `SMTP_FROM` is missing, still uses the `noreply@manager.multiportal.site` default sender, or otherwise looks misaligned with the SMTP relay setup.
+- Runtime startup now fails fast if required auth/storage/SMTP config is missing or invalid; the active API/web/worker processes no longer fall back to placeholder secrets or implicit `localhost` endpoints.
+- Mailer warns at startup when the configured sender domain looks misaligned with the SMTP relay setup.
 - Mailer now also verifies the SMTP transport at startup and logs the relay response plus `accepted` / `rejected` recipients after each send.
 - Mail transport automatically uses implicit SSL/TLS when `SMTP_SECURE=true` or `SMTP_PORT=465`; otherwise it defaults to STARTTLS with `SMTP_REQUIRE_TLS=true`.
 - API runtime can honor optional `API_PUBLIC_URL` and `WEB_PUBLIC_URL` environment variables to avoid generating auth links with `localhost` when the app is exposed behind a public domain.
@@ -183,7 +188,7 @@ packages/config/
 - Backend: Jest unit and integration tests
 - Frontend: Vitest plus Testing Library
 - E2E: Playwright
-- Current turn validation used syntax checks, container restarts, startup `prisma migrate deploy`, and `curl`-driven auth flow verification; automated coverage is still pending
+- Current turn validation used syntax checks, direct loader fail-fast checks, a full `docker compose down && docker compose up -d --build`, startup `prisma migrate deploy`, and `curl` checks against `/health` and the web root; automated coverage is still pending
 
 ## Constraints
 

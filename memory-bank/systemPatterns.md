@@ -130,9 +130,10 @@ User clicks "Publish" ──▶ API creates PublicationJob (pending)
 ### 9. Configuration Validation (Fail-Fast)
 - All configuration loaded from environment variables
 - Validated at application startup using Zod schemas
-- If required variables are missing or invalid, the application refuses to start
-- Validation happens in `packages/config` and is shared by all apps
-- No default values for secrets or environment-specific settings
+- Active JS runtimes (`apps/api/db-server.js`, `apps/web/front-server.js`, `apps/worker/worker.js`) load per-runtime schemas from `packages/config` through small `runtime-config.js` bridge files.
+- If required variables are missing or invalid, the active runtime refuses to start instead of silently using secret placeholders or `localhost` endpoints.
+- Validation happens in `packages/config` and is shared by all apps, but Prisma client generation intentionally uses an empty `DATABASE_URL` fallback in `prisma.config.ts` so Docker builds can generate the client without a live database connection or build-time secret injection.
+- No default values for secrets or environment-specific settings in active runtime processes.
 
 ### 10. Module Separation (Backend)
 ```

@@ -3,9 +3,10 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { config } = require("./runtime-config");
 
-const API_PROXY_URL = process.env.API_PROXY_URL || `http://localhost:${process.env.API_PORT || 3001}`;
-const MEDIA_PROXY_URL = process.env.MINIO_PROXY_URL || `http://localhost:${process.env.MINIO_API_PORT || 9000}`;
+const API_PROXY_URL = config.API_PROXY_URL;
+const MEDIA_PROXY_URL = config.MINIO_PROXY_URL;
 const API_ROUTE_PREFIXES = [
   "/auth",
   "/listings",
@@ -182,6 +183,6 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(3000, () => {
-  console.log("Frontend running at http://localhost:3000");
+server.listen(config.WEB_PORT, () => {
+  console.log(`Frontend running at http://localhost:${config.WEB_PORT}`);
 });

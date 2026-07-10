@@ -1,48 +1,94 @@
-import { envSchema, type EnvConfig } from "./schema";
+import type { ZodType } from "zod";
+import {
+  apiRuntimeEnvSchema,
+  envSchema,
+  prismaEnvSchema,
+  webRuntimeEnvSchema,
+  workerRuntimeEnvSchema,
+  type ApiRuntimeConfig,
+  type EnvConfig,
+  type PrismaRuntimeConfig,
+  type WebRuntimeConfig,
+  type WorkerRuntimeConfig,
+} from "./schema";
 
-let cachedConfig: EnvConfig | null = null;
+const configCache = new Map<string, unknown>();
+const API_CACHE_KEY = "api";
 
-/**
- * Validates and returns the application configuration from environment variables.
- * Fails fast with a detailed error message if any required variable is missing or invalid.
- * The result is cached after the first successful validation.
- */
-export function loadConfig(): EnvConfig {
+function formatConfigIssues(label: string, issues: Array<{ path: Array<string | number>; message: string }>): string {
+  const formattedIssues = issues
+    .map((issue) => `  - ${issue.path.join(".") || "(root)"}: ${issue.message}`)
+    .join("\n");
+
+  return [
+    `Configuration validation failed for ${label}.`,
+    "The following environment variables are missing or invalid:",
+    formattedIssues,
+    "",
+    "Check your .env file and container environment before starting the process.",
+  ].join("\n");
+}
+
+function loadRuntimeConfig<T>(cacheKey: string, label: string, schema: ZodType<T>): T {
+  const cachedConfig = configCache.get(cacheKey);
   if (cachedConfig) {
-    return cachedConfig;
+    return cachedConfig as T;
   }
 
-  const result = envSchema.safeParse(process.env);
+  const result = schema.safeParse(process.env);
 
   if (!result.success) {
-    const issues = result.error.issues
-      .map((issue) => `  - ${issue.path.join(".")}: ${issue.message}`)
-      .join("\n");
-
-    throw new Error(
-      `Configuration validation failed. The following environment variables are missing or invalid:\n${issues}\n\nCheck your .env file and ensure all required variables are set correctly.`,
-    );
+    throw new Error(formatConfigIssues(label, result.error.issues));
   }
 
-  cachedConfig = result.data;
-  return cachedConfig;
+  configCache.set(cacheKey, result.data);
+  return result.data;
+}
+
+export function loadApiConfig(): ApiRuntimeConfig {
+  return loadRuntimeConfig(API_CACHE_KEY, "the API runtime", apiRuntimeEnvSchema);
+}
+
+export function loadWorkerConfig(): WorkerRuntimeConfig {
+  return loadRuntimeConfig("worker", "the worker runtime", workerRuntimeEnvSchema);
+}
+
+export function loadWebConfig(): WebRuntimeConfig {
+  return loadRuntimeConfig("web", "the web runtime", webRuntimeEnvSchema);
+}
+
+export function loadPrismaConfig(): PrismaRuntimeConfig {
+  return loadRuntimeConfig("prisma", "Prisma", prismaEnvSchema);
 }
 
 /**
- * Returns the cached configuration. Throws if loadConfig() has not been called yet.
+ * Backward-compatible alias for the API runtime loader.
+ */
+export function loadConfig(): EnvConfig {
+  return loadApiConfig();
+}
+
+/**
+ * Returns the cached API configuration. Throws if loadConfig() / loadApiConfig()
+ * has not been called yet.
  */
 export function getConfig(): EnvConfig {
+  const cachedConfig = configCache.get(API_CACHE_KEY);
+
   if (!cachedConfig) {
     throw new Error(
-      "Configuration has not been loaded. Call loadConfig() at application startup before accessing configuration.",
+      "Configuration has not been loaded. Call loadConfig() or loadApiConfig() at application startup before accessing configuration.",
     );
   }
-  return cachedConfig;
+
+  return cachedConfig as EnvConfig;
 }
 
 /**
- * Returns true if the current environment is production.
+ * Returns true if the current API runtime environment is production.
  */
 export function isProduction(): boolean {
   return getConfig().NODE_ENV === "production";
 }
+
+export { envSchema };

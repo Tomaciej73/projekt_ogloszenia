@@ -1,9 +1,9 @@
 # Progress
 
 ## Current Status
-**Phase 7 - BullMQ Worker Integrated and Frontend Publication** (complete, with auth hardening updates on 2026-07-09)
+**Phase 7 - BullMQ Worker Integrated and Frontend Publication** (complete, with auth/config hardening updates on 2026-07-10)
 
-BullMQ worker processes publication jobs from the Redis queue on port 6739. The API pushes publication jobs to the queue instead of using `setTimeout` mocks. The current runtime stack uses plain Node.js servers for API, web, and worker, with HttpOnly cookie auth backed by JWT signing, SMTP account activation emails, DB-backed login lockout after 5 failed attempts, 6-digit reset codes, and stronger password validation across registration and reset flows.
+BullMQ worker processes publication jobs from the Redis queue on port 6739. The API pushes publication jobs to the queue instead of using `setTimeout` mocks. The current runtime stack uses plain Node.js servers for API, web, and worker, with HttpOnly cookie auth backed by JWT signing, SMTP account activation emails, DB-backed login lockout after 5 failed attempts, 6-digit reset codes, stronger password validation across registration and reset flows, and fail-fast runtime config validation shared from `packages/config`.
 
 ## Completed
 
@@ -12,6 +12,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] pnpm monorepo with 7 workspace packages
 - [x] Docker Compose with PostgreSQL 18, Redis 8, MinIO, API (3001), Web (3000)
 - [x] API container startup now runs `prisma migrate deploy` before serving requests, so Docker/VPS upgrades apply pending schema changes automatically
+- [x] Active API/web/worker runtimes now load per-runtime validated config from `packages/config` via bridge files, instead of reading `process.env` with dangerous secret or `localhost` fallbacks
 - [x] Prisma v7 schema with 12 entities and 4 enums
 - [x] 5 Prisma migrations applied
 - [x] `.env` - all configuration via dotenv, no hardcoded credentials
@@ -95,6 +96,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - Manual security review is still in progress; JWT is no longer stored in `localStorage`, but any future same-origin XSS could still act through an active browser session even though it can no longer trivially exfiltrate the JWT.
 - The upload path now blocks renamed/corrupted non-images through MIME sniffing and image-structure checks, but it does not yet run a dedicated antivirus engine such as ClamAV for full malware scanning.
 - Real inbox delivery still depends on a verified `SMTP_FROM` sender and aligned SPF/DKIM/DMARC for the chosen SMTP relay.
+- Prisma CLI intentionally allows an empty `DATABASE_URL` in `prisma.config.ts` during client generation, but active runtimes still fail fast when required database/auth/storage config is missing or invalid.
 
 ## Current Port Assignments (from `.env`)
 | Service | Host Port |
@@ -137,3 +139,4 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-09 | Browser auth moved from JWT-in-`localStorage` to an HttpOnly `mp_auth` cookie | Reduces account-takeover impact of future XSS by keeping the signed session token out of JavaScript-readable storage |
 | 2026-07-09 | Mutating browser requests now require a same-origin CSRF token and static HTML is served with CSP/security headers | Adds defense-in-depth around the new cookie-based session model and reduces the blast radius of DOM/script injection bugs |
 | 2026-07-09 | Direct presigned uploads were disabled and `/media/upload` now validates real image payloads before storage | Prevents renamed text/script files and malformed uploads from being stored as listing photos |
+| 2026-07-10 | Active API/web/worker runtimes now import per-runtime validated config from `packages/config` | Restores fail-fast startup, removes dangerous `localhost`/secret fallbacks, and keeps JS runtime behavior aligned with the shared schema |

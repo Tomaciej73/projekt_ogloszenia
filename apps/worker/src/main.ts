@@ -1,7 +1,7 @@
-import { loadConfig } from "@multiportal/config";
+import { loadWorkerConfig } from "@multiportal/config";
 
 async function bootstrap(): Promise<void> {
-  const config = loadConfig();
+  const config = loadWorkerConfig();
 
   console.log(`Worker starting in ${config.NODE_ENV} mode`);
   console.log(`Redis: ${config.REDIS_URL}`);

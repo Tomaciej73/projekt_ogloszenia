@@ -2,8 +2,10 @@ FROM node:24.18.0-alpine
 
 WORKDIR /app
 
-RUN npm install bullmq dotenv
+RUN npm install bullmq dotenv tsx zod
 
 COPY apps/worker/worker.js apps/worker/
+COPY apps/worker/runtime-config.js apps/worker/
+COPY packages/ packages/
 
 CMD ["node", "apps/worker/worker.js"]
