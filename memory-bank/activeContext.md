@@ -3,7 +3,7 @@
 ## Current Phase
 **Phase 8 - Provider Research and Auth Hardening** (in progress)
 
-A fully working application is running: user registration/login with HttpOnly cookie auth backed by JWT signing plus PBKDF2+SHA512 password hashing, account activation via expiring email links, DB-backed login lockout after repeated failures, password reset flow with SMTP-delivered 6-digit codes, listing draft CRUD stored in PostgreSQL via Prisma, publication job creation with BullMQ, and a web frontend dashboard. The web runtime now proxies API routes so browser clients can use the same origin instead of hardcoded `localhost` API URLs. Docker Compose includes PostgreSQL 18, Redis 8, MinIO, and optional API+Web containers (`profile: full`).
+A fully working application is running: user registration/login with HttpOnly cookie auth backed by JWT signing plus PBKDF2+SHA512 password hashing, account activation via expiring email links, DB-backed login lockout after repeated failures, password reset flow with SMTP-delivered 6-digit codes, listing draft CRUD stored in PostgreSQL via Prisma, publication job creation with BullMQ, and a web frontend dashboard. The web runtime now proxies API routes so browser clients can use the same origin instead of hardcoded `localhost` API URLs, and the `/media-files/...` proxy now keeps MinIO details hidden behind the web origin. Docker Compose includes PostgreSQL 18, Redis 8, MinIO, and healthy API/web/worker runtime containers running as the non-root `node` user.
 
 ## Active Decisions
 
@@ -21,16 +21,20 @@ A fully working application is running: user registration/login with HttpOnly co
 - **Auth abuse protection:** `/auth/*` now has configurable Redis-backed rate limits in the active API runtime, and forgot-password code re-sends are additionally throttled through the existing `passwordResetRequestedAt` timestamp stored in PostgreSQL.
 - **Runtime version source of truth:** The user-visible app version now comes from the root workspace SemVer (`package.json`) through a shared runtime helper, so API health/logs and static HTML footers stay aligned without manual string updates.
 - **Request body limits:** The active API now enforces byte limits while streaming JSON bodies into memory: standard JSON requests are capped at 1 MB, and `/media/upload` has a larger request cap sized for the existing 10 MB decoded image limit plus base64 overhead.
+- **Cross-origin hardening:** Auth JSON endpoints now emit CORS headers only for allowed web origins, invalid auth preflights receive `403 Origin not allowed`, and the `mp_csrf` cookie is now `HttpOnly`.
+- **Media proxy hardening:** The web runtime now strips browser `Origin`/`Referer` before proxying media requests, blocks the bare `/media-files/` path with `404`, and rewrites only same-origin MinIO redirect targets back onto `/media-files/...`.
+- **Container runtime hardening:** API/web/worker images now build from the locked pnpm workspace with an explicit `.dockerignore`, remove global `npm` / `npx`, use explicit Prisma config paths for generate/migrate, run as the non-root `node` user, and expose Docker healthchecks.
+- **Dependency posture:** The controlled SemVer upgrade pass is now on `0.4.1`, and `pnpm audit --json` is clean (`0` info/low/moderate/high/critical findings) after verified version bumps plus workspace overrides for vulnerable transitives.
 - **Mail deliverability constraint:** The SMTP relay currently accepts messages, and runtime config now points to `noreply@manager.multiportal.site`, but real inbox delivery to providers like Gmail/Onet still depends on that mailbox actually existing on the relay plus aligned SPF/DKIM/DMARC.
 - **Owner's changes are authoritative:** Port numbers, configuration values, file names chosen by the project owner must not be reverted or "corrected" by AI. See `.clinerules/01-project.md`.
 - **Current port assignments (from `.env`):** PostgreSQL 5243, Redis 6739, MinIO API 9000, MinIO Console 9001, API 3001, Web 3000.
 
 ## Immediate Next Steps
 
-1. Add E2E coverage for activation, forgot-password, and restart persistence scenarios.
+1. Add E2E coverage for activation, forgot-password, container restart persistence, and rate-limit scenarios.
 2. Implement the first provider connector using the researched OLX constraints and category limitations.
-3. Continue official API/commercial access research for Vinted Pro Integrations and Facebook Marketplace.
-4. Add E2E tests for the main listing and publication flows.
+3. Continue official Vinted Pro and Facebook Marketplace API/commercial access research.
+4. Re-run the full security toolchain after the next substantial auth/media/runtime change set.
 
 ## Known Unknowns
 
@@ -41,8 +45,15 @@ A fully working application is running: user registration/login with HttpOnly co
 
 ## Recent Changes
 
+- 2026-07-10: Closed the confirmed `/media-files` proxy issue by blocking the bare media route, stripping browser `Origin`/`Referer` from upstream media requests, rewriting only same-origin MinIO `Location` redirects, and keeping media responses same-origin-only.
+- 2026-07-10: Tightened auth cross-origin behavior by allowing CORS only for trusted web origins, rejecting invalid auth preflights with `403`, and making the `mp_csrf` cookie `HttpOnly`.
+- 2026-07-10: Restored SMTP certificate verification by default, keeping `SMTP_TLS_ALLOW_INVALID_CERTS` only as an explicit temporary debugging escape hatch.
+- 2026-07-10: Rebuilt the API/web/worker images around the locked pnpm workspace, explicit Prisma config paths, `.dockerignore`, non-root `node` runtime users, and Docker healthchecks; verified the stack comes up healthy after `docker compose up -d --build --force-recreate`.
+- 2026-07-10: Completed a controlled dependency pass to app version `0.4.1`, updated verified runtime/library versions, and confirmed `pnpm audit --json` now reports zero known npm vulnerabilities.
+- 2026-07-10: Expanded the local security assessment with Skipfish, Trivy, Semgrep, and Gitleaks, reframed the combined report in a NIST SP 800-115-style structure, confirmed additional medium-severity issues around disabled SMTP TLS verification and root-running runtime containers, and stored all artifacts under `security-reports/2026-07-10-zap-burp/`.
+- 2026-07-10: Completed a local security assessment against the active Docker runtime using ZAP, Burp-family tooling (Dastardly plus Burp Suite Community installation), and targeted authenticated manual tests; confirmed a real `/media-files` CORS/internal-redirect issue, plus lower-severity API CORS and `mp_csrf` cookie hardening gaps, and stored the artifacts under `security-reports/2026-07-10-zap-burp/`.
 - 2026-07-10: Moved auth rate-limit counters from process memory to Redis, kept forgot-password resend cooldown in PostgreSQL, and updated the main frontend auth flows to show warning toasts with `Retry-After` timing when `429` limits are hit.
-- 2026-07-10: Centralized the user-visible app version behind the root workspace SemVer (`0.4.0`) so API health/logs and HTML footers render the same runtime version without hardcoded `v0.3.0` strings.
+- 2026-07-10: Centralized the user-visible app version behind the root workspace SemVer (`0.4.1`) so API health/logs and HTML footers render the same runtime version without hardcoded `v0.3.0` strings.
 - 2026-07-10: Added configurable rate limiting for `/auth/*` plus tighter login/register/activate/forgot-password/reset-password limits in the active API, and added a DB-backed resend cooldown for forgot-password emails using `passwordResetRequestedAt`.
 - 2026-07-10: Confirmed from official provider docs that OLX exposes an official adverts API behind application verification, while Vinted Pro Integrations supports item listing via API only for allowlisted Pro businesses; public API pricing details are still not disclosed in the official docs reviewed so far.
 - 2026-07-10: Strengthened the working rule that every meaningful implementation/process/version change must be explicitly documented in `memory-bank`, with SemVer notation recorded whenever versions are pinned or updated.

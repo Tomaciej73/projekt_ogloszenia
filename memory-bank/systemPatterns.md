@@ -30,6 +30,7 @@ The system follows a modular monorepo architecture with clear separation between
 - Browser-rendered listing photos are served through `/media-files/<bucket>/<key>` on the web origin instead of exposing direct MinIO URLs to the client.
 - `apps/web/front-server.js` proxies those requests to the internal MinIO target from `MINIO_PROXY_URL`.
 - `apps/api/db-server.js` generates media URLs through the web origin and normalizes legacy direct-MinIO or `localhost` photo URLs in listing responses, so existing records keep working after deployment or hostname changes.
+- The media proxy strips browser `Origin` and `Referer` before forwarding to MinIO, blocks the bare `/media-files/` path with `404`, forwards only a safe allowlist of response headers, and rewrites only same-origin MinIO `Location` redirects back onto `/media-files/...`.
 
 ### 3. Startup Migration Gate
 - The API container runs `prisma migrate deploy` before `apps/api/db-server.js` starts accepting traffic.
@@ -197,3 +198,9 @@ apps/api/src/
 - The active API stores auth limiter counters in Redis, so request counters survive API restarts and can be shared by multiple API instances as long as they use the same Redis backend.
 - `POST /auth/forgot-password` also enforces a database-backed resend cooldown via `passwordResetRequestedAt`, so recently sent reset codes cannot be re-requested immediately even after an API restart.
 - Rate-limit `429` responses include `Retry-After`, `X-RateLimit-*`, and `retryAfterSeconds`, allowing the active frontend to show user-facing throttle warnings with real wait times.
+
+### 17. Hardened Runtime Image Pattern
+- Runtime Docker images install from the checked-in pnpm lockfile using workspace package manifests only, keeping dependency resolution deterministic without copying secrets such as `.env` into the build context.
+- `.dockerignore` excludes `.env`, `node_modules`, git metadata, security artifacts, and AI workflow files from Docker build context transfer.
+- The API image runs Prisma client generation during the image build and `prisma migrate deploy` during container startup using explicit `apps/api/prisma.config.ts`, avoiding working-directory ambiguity.
+- App runtime images remove global `npm` / `npx`, switch to the non-root `node` user, and declare Docker healthchecks through `apps/api/healthcheck.js`, `apps/web/healthcheck.js`, and `apps/worker/healthcheck.js`.

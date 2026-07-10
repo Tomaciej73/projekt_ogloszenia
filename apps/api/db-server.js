@@ -75,11 +75,48 @@ function getBaseSecurityHeaders() {
   };
 }
 
-function getCorsHeaders() {
+function normalizeOrigin(value) {
+  if (typeof value !== "string") return null;
+
+  try {
+    return new URL(value.trim()).origin;
+  } catch {
+    return null;
+  }
+}
+
+function getAllowedCorsOrigins(req) {
+  const allowedOrigins = new Set();
+  const derivedWebOrigin = normalizeOrigin(getWebBaseUrl(req));
+
+  if (config.WEB_PUBLIC_URL) {
+    const publicWebOrigin = normalizeOrigin(config.WEB_PUBLIC_URL);
+    if (publicWebOrigin) allowedOrigins.add(publicWebOrigin);
+  }
+
+  if (derivedWebOrigin) {
+    allowedOrigins.add(derivedWebOrigin);
+  }
+
+  allowedOrigins.add(`http://localhost:${config.WEB_PORT}`);
+  allowedOrigins.add(`http://127.0.0.1:${config.WEB_PORT}`);
+  return allowedOrigins;
+}
+
+function getCorsHeaders(req) {
+  const rawOriginHeader = Array.isArray(req?.headers?.origin) ? req.headers.origin[0] : req?.headers?.origin;
+  const requestOrigin = normalizeOrigin(rawOriginHeader);
+
+  if (!requestOrigin || !getAllowedCorsOrigins(req).has(requestOrigin)) {
+    return {};
+  }
+
   return {
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": requestOrigin,
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-CSRF-Token",
+    "Access-Control-Allow-Credentials": "true",
+    Vary: "Origin",
   };
 }
 
@@ -87,7 +124,7 @@ function jsonResponse(res, status, data, extraHeaders = {}) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     ...getBaseSecurityHeaders(),
-    ...getCorsHeaders(),
+    ...getCorsHeaders(res.__request),
     ...extraHeaders,
   });
   res.end(JSON.stringify(data, null, JSON_SPACES));
@@ -310,7 +347,16 @@ function getApiBaseUrl(req) {
 
 function getWebBaseUrl(req) {
   if (config.WEB_PUBLIC_URL) return config.WEB_PUBLIC_URL.replace(/\/$/, "");
-  const protocol = req.headers["x-forwarded-proto"] || "http";
+  const protocol = String(req.headers["x-forwarded-proto"] || "http").split(",")[0].trim() || "http";
+  const forwardedHostHeader = Array.isArray(req.headers["x-forwarded-host"])
+    ? req.headers["x-forwarded-host"][0]
+    : req.headers["x-forwarded-host"];
+  const forwardedHost = String(forwardedHostHeader || "").split(",")[0].trim();
+
+  if (forwardedHost) {
+    return `${protocol}://${forwardedHost}`;
+  }
+
   const hostHeader = String(req.headers.host || "").trim();
   if (!hostHeader) {
     return getApiBaseUrl(req);
@@ -666,7 +712,7 @@ function buildCsrfCookie(req, token) {
   return buildCookieHeader(CSRF_COOKIE_NAME, token, {
     maxAge: AUTH_COOKIE_MAX_AGE_SECONDS,
     path: "/",
-    httpOnly: false,
+    httpOnly: true,
     sameSite: "Strict",
     secure: isSecureRequest(req),
   });
@@ -926,10 +972,23 @@ function validateUploadedImage({ fileName, contentType, data }) {
 }
 
 const server = http.createServer(async (req, res) => {
+  res.__request = req;
+
   if (req.method === "OPTIONS") {
-    res.writeHead(200, {
+    const corsHeaders = getCorsHeaders(req);
+    const hasOriginHeader = Boolean(Array.isArray(req.headers.origin) ? req.headers.origin[0] : req.headers.origin);
+
+    if (hasOriginHeader && !corsHeaders["Access-Control-Allow-Origin"]) {
+      res.writeHead(403, {
+        "Content-Type": "text/plain; charset=utf-8",
+        ...getBaseSecurityHeaders(),
+      });
+      return res.end("Origin not allowed");
+    }
+
+    res.writeHead(204, {
       ...getBaseSecurityHeaders(),
-      ...getCorsHeaders(),
+      ...corsHeaders,
     });
     return res.end();
   }

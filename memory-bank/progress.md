@@ -1,7 +1,7 @@
 # Progress
 
 ## Current Status
-**Phase 7 - BullMQ Worker Integrated and Frontend Publication** (complete, with auth/config hardening updates on 2026-07-10)
+**Phase 7 - BullMQ Worker Integrated and Frontend Publication** (complete, with auth/config hardening and expanded security assessment updates on 2026-07-10)
 
 BullMQ worker processes publication jobs from the Redis queue on port 6739. The API pushes publication jobs to the queue instead of using `setTimeout` mocks. The current runtime stack uses plain Node.js servers for API, web, and worker, with HttpOnly cookie auth backed by JWT signing, SMTP account activation emails, DB-backed login lockout after 5 failed attempts, 6-digit reset codes, stronger password validation across registration and reset flows, and fail-fast runtime config validation shared from `packages/config`.
 
@@ -13,6 +13,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Docker Compose with PostgreSQL 18, Redis 8, MinIO, API (3001), Web (3000)
 - [x] API container startup now runs `prisma migrate deploy` before serving requests, so Docker/VPS upgrades apply pending schema changes automatically
 - [x] Active API/web/worker runtimes now load per-runtime validated config from `packages/config` via bridge files, instead of reading `process.env` with dangerous secret or `localhost` fallbacks
+- [x] App runtime images now use an explicit `.dockerignore`, workspace-locked production installs, explicit Prisma config paths, non-root `node` users, and Docker healthchecks
 - [x] Prisma v7 schema with 12 entities and 4 enums
 - [x] 5 Prisma migrations applied
 - [x] `.env` - all configuration via dotenv, no hardcoded credentials
@@ -21,7 +22,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
-### Backend API (`apps/api/db-server.js`) v0.4.0
+### Backend API (`apps/api/db-server.js`) v0.4.1
 - [x] `POST /auth/register` - creates inactive accounts, generates activation tokens, sends activation email, and returns activation-required messaging
 - [x] `GET /auth/activate` - validates activation link, activates account, and renders an HTML confirmation page
 - [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
@@ -58,7 +59,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `public/register.html` - standalone registration page with strong password rules, activation-required messaging, and CSRF-protected signup
 - [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint, DB-synced remaining login-attempt messaging, and CSRF-protected login
 - [x] `front-server.js` - static file server plus same-origin API and MinIO media proxy for VPS/Nginx deployment
-- [x] User-visible version labels now render from the shared app SemVer (`0.4.0`) instead of duplicated hardcoded footer/log strings
+- [x] User-visible version labels now render from the shared app SemVer (`0.4.1`) instead of duplicated hardcoded footer/log strings
 - [x] Main auth flows now surface rate-limit hits as warning toasts with retry timing
 - [x] `apps/web/src/` scaffold no longer hardcodes `localhost` API URLs; it now supports optional `NEXT_PUBLIC_API_BASE_URL` with same-origin fallback
 - [x] Dashboard after login with listing list and stats
@@ -79,11 +80,17 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Mail config warnings for placeholder/misaligned SMTP sender settings
 - [x] Runtime SMTP config supports explicit `SMTP_FROM_NAME`, `SMTP_REPLY_TO`, `SMTP_SENDER`, and optional public URL envs for domain-based auth links
 - [x] Listing media URLs now stay on the web origin, so thumbnails no longer depend on direct `localhost:9000` or MinIO host exposure
+- [x] The `/media-files` proxy now blocks the bare route, strips browser `Origin`/`Referer`, rewrites only same-origin MinIO redirects, and no longer reflects MinIO CORS behavior back to browsers
 - [x] Uploads now accept only server-validated JPG/PNG/GIF/WebP payloads, blocking renamed text/script files and malformed image payloads before MinIO storage
 - [x] Oversized JSON/base64 uploads are rejected early with `413 Payload Too Large` instead of being buffered into RAM without a limit
 - [x] Static HTML now ships with CSP and standard browser security headers from the front server
+- [x] Auth CORS now allows only trusted web origins, invalid auth preflights return `403`, and the `mp_csrf` cookie is now `HttpOnly`
+- [x] SMTP certificate verification is enabled by default; invalid certificates require the explicit `SMTP_TLS_ALLOW_INVALID_CERTS=true` debugging flag
+- [x] Controlled SemVer dependency pass completed for `0.4.1`, with verified version bumps/overrides and a clean `pnpm audit --json` result
 - [x] No hardcoded passwords, tokens, or secrets in source code
 - [x] `.env` git-ignored, `.env.example` has placeholders only
+- [x] Local ZAP/Burp security assessment completed against the active Docker runtime, with artifacts stored under `security-reports/2026-07-10-zap-burp/`
+- [x] Local Trivy, Semgrep, Gitleaks, and Skipfish assessment completed, extending the same report set with runtime image, dependency, secret, and legacy crawler coverage
 
 ## Pending (Next Steps)
 
@@ -156,4 +163,8 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-10 | `/auth/*` now has configurable rate limiting and forgot-password now has a DB-backed resend cooldown | Reduces brute-force and mailbox-spam risk without hardcoding the thresholds into the runtime |
 | 2026-07-10 | Official research confirmed OLX adverts can be created/managed via its verified public API, while Vinted item listing API is gated to allowlisted Pro businesses | Clarifies provider feasibility before connector implementation and highlights unresolved commercial-access questions |
 | 2026-07-10 | Auth rate-limit counters now live in Redis and rate-limit responses expose retry timing to the frontend | Makes rate limits survive API restarts / multi-instance sharing and gives the UI enough data to show actionable throttle feedback |
-| 2026-07-10 | User-visible runtime version now comes from the root workspace SemVer (`0.4.0`) through a shared helper | Keeps API logs/health and static HTML footers aligned without manual version-string hunting |
+| 2026-07-10 | User-visible runtime version now comes from the root workspace SemVer (`0.4.1`) through a shared helper | Keeps API logs/health and static HTML footers aligned without manual version-string hunting |
+| 2026-07-10 | Security assessment artifacts are stored under `security-reports/2026-07-10-zap-burp/`, and the next fix priority is the confirmed `/media-files` CORS/internal-redirect issue | Preserves reproducible evidence for the scan and keeps remediation focused on the highest-signal findings first |
+| 2026-07-10 | The assessment methodology now combines ZAP, Burp-family tooling, Skipfish, Trivy, Semgrep, and Gitleaks under a NIST SP 800-115-style report | Keeps web-runtime, code, dependency, container, and secret-detection evidence in one place before remediation starts |
+| 2026-07-10 | `/media-files` and auth cross-origin behavior were tightened, SMTP certificate validation was restored, and app containers now run as non-root with healthchecks | Closes the main medium-severity findings from the 2026-07-10 local assessment and stabilizes Docker runtime startup |
+| 2026-07-10 | Controlled dependency pass updated the runtime to `0.4.1` and produced a clean `pnpm audit --json` report | Removes known npm advisory findings without blind version bumps and keeps the repo aligned with verified official versions |

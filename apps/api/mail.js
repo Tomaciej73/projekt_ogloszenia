@@ -7,6 +7,7 @@ const SMTP_PORT = config.SMTP_PORT;
 const SMTP_USER = config.SMTP_USER;
 const SMTP_SECURE = config.SMTP_SECURE ?? SMTP_PORT === 465;
 const SMTP_REQUIRE_TLS = SMTP_SECURE ? false : config.SMTP_REQUIRE_TLS ?? true;
+const SMTP_TLS_ALLOW_INVALID_CERTS = config.SMTP_TLS_ALLOW_INVALID_CERTS === true;
 const SMTP_CONNECTION_TIMEOUT_MS = 15000;
 const SMTP_GREETING_TIMEOUT_MS = 10000;
 const SMTP_SOCKET_TIMEOUT_MS = 20000;
@@ -23,9 +24,13 @@ const transporter = nodemailer.createTransport({
     user: SMTP_USER,
     pass: config.SMTP_PASSWORD,
   },
-  tls: {
-    rejectUnauthorized: false,
-  },
+  ...(SMTP_TLS_ALLOW_INVALID_CERTS
+    ? {
+      tls: {
+        rejectUnauthorized: false,
+      },
+    }
+    : {}),
 });
 
 function normalizeEmail(value) {
@@ -52,6 +57,10 @@ if (EMAIL_RE.test(SMTP_USER) && getEmailDomain(SMTP_USER) !== getEmailDomain(FRO
   console.warn(
     `Mail config warning: SMTP_FROM domain (${getEmailDomain(FROM)}) differs from SMTP_USER domain (${getEmailDomain(SMTP_USER)}). If SPF/DKIM/DMARC are not aligned, mailbox providers may junk or reject messages.`,
   );
+}
+
+if (SMTP_TLS_ALLOW_INVALID_CERTS) {
+  console.warn("Mail config warning: SMTP_TLS_ALLOW_INVALID_CERTS=true disables SMTP certificate verification. Use this only for temporary local debugging.");
 }
 
 async function logTransportStatus() {

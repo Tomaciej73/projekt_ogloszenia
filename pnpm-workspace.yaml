@@ -1,8 +1,15 @@
 packages:
   - "apps/*"
   - "packages/*"
+overrides:
+  "@hono/node-server": 1.19.14
+  multer: 2.2.0
+  postcss: 8.5.16
 onlyBuiltDependencies:
   - "@prisma/engines"
   - "prisma"
   - "sharp"
   - "msgpackr-extract"
+  - "esbuild"
+minimumReleaseAgeExclude:
+  - bullmq@5.80.1

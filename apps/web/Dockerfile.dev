@@ -1,13 +1,32 @@
 FROM node:24.18.0-alpine
 
 WORKDIR /app
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
 
-RUN npm install dotenv tsx zod
+RUN corepack enable
+
+COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml prisma.config.ts ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY apps/worker/package.json apps/worker/package.json
+COPY packages/config/package.json packages/config/package.json
+COPY packages/connectors/package.json packages/connectors/package.json
+COPY packages/shared/package.json packages/shared/package.json
+
+RUN pnpm install --prod --frozen-lockfile --ignore-scripts \
+  && pnpm rebuild esbuild
 
 COPY apps/web/ apps/web/
 COPY packages/ packages/
-COPY package.json package.json
+
+RUN rm -rf /usr/local/lib/node_modules/npm \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx \
+  && chown -R node:node /app
+
+USER node
 
 EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["node", "apps/web/healthcheck.js"]
 
 CMD ["node", "apps/web/front-server.js"]

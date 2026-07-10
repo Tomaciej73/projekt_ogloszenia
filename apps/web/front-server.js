@@ -18,6 +18,28 @@ const API_ROUTE_PREFIXES = [
   "/health",
 ];
 const MEDIA_ROUTE_PREFIX = "/media-files";
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+const MEDIA_RESPONSE_HEADER_ALLOWLIST = new Set([
+  "accept-ranges",
+  "cache-control",
+  "content-disposition",
+  "content-encoding",
+  "content-length",
+  "content-range",
+  "content-type",
+  "etag",
+  "expires",
+  "last-modified",
+]);
 
 function isApiRoute(pathname) {
   return API_ROUTE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -67,17 +89,81 @@ function buildHtmlSecurityHeaders(nonce) {
   };
 }
 
+function sendPlainText(res, status, message, extraHeaders = {}) {
+  res.writeHead(status, {
+    "Content-Type": "text/plain; charset=utf-8",
+    ...buildBaseSecurityHeaders(),
+    ...extraHeaders,
+  });
+  res.end(message);
+}
+
+function buildProxyRequestHeaders(req, extraHeaders = {}) {
+  const headers = { ...req.headers, ...extraHeaders };
+
+  for (const headerName of HOP_BY_HOP_HEADERS) {
+    delete headers[headerName];
+  }
+
+  for (const [headerName, headerValue] of Object.entries(headers)) {
+    if (headerValue === undefined) {
+      delete headers[headerName];
+    }
+  }
+
+  return headers;
+}
+
+function rewriteMediaLocationHeader(locationHeader) {
+  if (!locationHeader) return null;
+
+  try {
+    const target = new URL(locationHeader, MEDIA_PROXY_URL);
+    const mediaOrigin = new URL(MEDIA_PROXY_URL).origin;
+
+    if (target.origin !== mediaOrigin) {
+      return null;
+    }
+
+    return `${MEDIA_ROUTE_PREFIX}${target.pathname}${target.search}`;
+  } catch {
+    return null;
+  }
+}
+
+function buildMediaResponseHeaders(proxyHeaders) {
+  const responseHeaders = {
+    ...buildBaseSecurityHeaders(),
+    "Cross-Origin-Resource-Policy": "same-origin",
+  };
+
+  for (const [headerName, headerValue] of Object.entries(proxyHeaders)) {
+    const normalizedHeaderName = headerName.toLowerCase();
+    if (!MEDIA_RESPONSE_HEADER_ALLOWLIST.has(normalizedHeaderName) || headerValue === undefined) {
+      continue;
+    }
+
+    responseHeaders[headerName] = headerValue;
+  }
+
+  const rewrittenLocation = rewriteMediaLocationHeader(proxyHeaders.location);
+  if (rewrittenLocation) {
+    responseHeaders.Location = rewrittenLocation;
+  }
+
+  return responseHeaders;
+}
+
 function proxyToApi(req, res, url) {
   const target = new URL(`${url.pathname}${url.search}`, API_PROXY_URL);
   const client = target.protocol === "https:" ? https : http;
 
   const proxyReq = client.request(target, {
     method: req.method,
-    headers: {
-      ...req.headers,
+    headers: buildProxyRequestHeaders(req, {
       "x-forwarded-host": req.headers.host || "",
       "x-forwarded-proto": req.headers["x-forwarded-proto"] || "http",
-    },
+    }),
   }, (proxyRes) => {
     res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
     proxyRes.pipe(res);
@@ -92,18 +178,24 @@ function proxyToApi(req, res, url) {
 }
 
 function proxyToMedia(req, res, url) {
-  const mediaPath = url.pathname.replace(MEDIA_ROUTE_PREFIX, "") || "/";
+  const mediaPath = url.pathname.slice(MEDIA_ROUTE_PREFIX.length);
+  if (!mediaPath || mediaPath === "/") {
+    sendPlainText(res, 404, "Media object not found", { "Cache-Control": "no-store" });
+    return;
+  }
+
   const target = new URL(`${mediaPath}${url.search}`, MEDIA_PROXY_URL);
   const client = target.protocol === "https:" ? https : http;
 
   const proxyReq = client.request(target, {
     method: req.method,
-    headers: {
-      ...req.headers,
+    headers: buildProxyRequestHeaders(req, {
       host: target.host,
-    },
+      origin: undefined,
+      referer: undefined,
+    }),
   }, (proxyRes) => {
-    res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+    res.writeHead(proxyRes.statusCode || 502, buildMediaResponseHeaders(proxyRes.headers));
     proxyRes.pipe(res);
   });
 

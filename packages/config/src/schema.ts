@@ -121,6 +121,7 @@ export const smtpEnvSchema = z.object({
   SMTP_PORT: integerFromEnvSchema,
   SMTP_SECURE: optionalBooleanFromEnvSchema,
   SMTP_REQUIRE_TLS: optionalBooleanFromEnvSchema,
+  SMTP_TLS_ALLOW_INVALID_CERTS: optionalBooleanFromEnvSchema,
   SMTP_USER: requiredStringSchema,
   SMTP_PASSWORD: requiredStringSchema,
   SMTP_FROM: requiredEmailSchema,

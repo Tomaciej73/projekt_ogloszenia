@@ -25,6 +25,7 @@
 - `apps/web/src/` is still a future Next.js migration path, but its API calls now use optional `NEXT_PUBLIC_API_BASE_URL` instead of hardcoded `localhost`
 - `apps/api/docker-entrypoint.sh` runs `prisma migrate deploy` and then starts `apps/api/db-server.js`
 - `apps/api/db-server.js` handles the active REST API runtime
+- `apps/api/healthcheck.js`, `apps/web/healthcheck.js`, and `apps/worker/healthcheck.js` provide container-native runtime health probes
 - `apps/api/runtime-config.js` loads the validated API runtime config from `packages/config`
 - `apps/worker/worker.js` processes BullMQ jobs
 - `apps/worker/runtime-config.js` loads the validated worker runtime config from `packages/config`
@@ -46,14 +47,14 @@ All dependency versions must follow the project policy defined in `.clinerules/0
 
 ## Verified Versions
 
-Checked 2026-07-07 via official/npm/Docker sources.
+Checked 2026-07-10 via official Node.js / npm registry / Docker Hub sources.
 
 ### Runtime
 
 | Runtime | Version | Policy | Source |
 |--------|---------|--------|--------|
 | Node.js | 24.18.0 | Latest LTS baseline | nodejs.org |
-| Node.js Current | 26.4.0 | Current release, not production baseline | nodejs.org |
+| Node.js Current | 26.5.0 | Current release, not production baseline | nodejs.org |
 
 ### Docker Images
 
@@ -76,7 +77,14 @@ Checked 2026-07-07 via official/npm/Docker sources.
 | TypeScript | 6.0.3 | npm registry |
 | Zod | 4.4.3 | npm registry |
 | Tailwind CSS | 4.3.2 | npm registry |
-| BullMQ | 5.79.3 | npm registry |
+| BullMQ | 5.80.1 | npm registry |
+| Express | 5.2.1 | npm registry |
+| dotenv | 17.4.2 | npm registry |
+| jsonwebtoken | 9.0.3 | npm registry |
+| minio | 8.0.7 | npm registry |
+| multer | 2.2.0 | npm registry |
+| postcss | 8.5.16 | npm registry |
+| `@hono/node-server` (override) | 1.19.14 | npm registry |
 | Vitest | 4.1.10 | npm registry |
 | Jest | 30.4.2 | npm registry |
 | Playwright | 1.61.1 | npm registry |
@@ -100,6 +108,7 @@ Checked 2026-07-07 via official/npm/Docker sources.
 - Web runtime on host port `3000`
 - Browser clients now call the web origin only; `apps/web/front-server.js` proxies selected API routes to the API runtime target.
 - Browser-rendered listing photos also stay on the web origin; `apps/web/front-server.js` proxies `/media-files/...` to MinIO so thumbnails do not depend on exposing direct MinIO hostnames.
+- API/web/worker app containers now run as the non-root `node` user and expose image-defined Docker healthchecks.
 
 ## Environment Variables
 
@@ -112,7 +121,7 @@ Key `.env` groups:
 - **Auth:** `JWT_SECRET`, `SESSION_SECRET`, `CSRF_SECRET`
 - **Auth rate limiting:** `AUTH_RATE_LIMIT_WINDOW_MS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`, `AUTH_LOGIN_RATE_LIMIT_WINDOW_MS`, `AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS`, `AUTH_REGISTER_RATE_LIMIT_WINDOW_MS`, `AUTH_REGISTER_RATE_LIMIT_MAX_REQUESTS`, `AUTH_FORGOT_PASSWORD_RATE_LIMIT_WINDOW_MS`, `AUTH_FORGOT_PASSWORD_RATE_LIMIT_MAX_REQUESTS`, `AUTH_RESET_PASSWORD_RATE_LIMIT_WINDOW_MS`, `AUTH_RESET_PASSWORD_RATE_LIMIT_MAX_REQUESTS`, `AUTH_ACTIVATE_RATE_LIMIT_WINDOW_MS`, `AUTH_ACTIVATE_RATE_LIMIT_MAX_REQUESTS`, `AUTH_PASSWORD_RESET_RESEND_COOLDOWN_MS`
 - **SMTP:** `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`
-- **SMTP transport mode:** optional `SMTP_SECURE` plus optional `SMTP_REQUIRE_TLS`
+- **SMTP transport mode:** optional `SMTP_SECURE`, optional `SMTP_REQUIRE_TLS`, and optional temporary-debug-only `SMTP_TLS_ALLOW_INVALID_CERTS`
 - **Encryption:** `TOKEN_ENCRYPTION_KEY`
 - **App:** `API_PORT`, `WEB_PORT`, `NODE_ENV`, `LOG_LEVEL`, `API_PROXY_URL`, optional `API_PUBLIC_URL`, optional `WEB_PUBLIC_URL`
 - **Next.js scaffold only (optional):** `NEXT_PUBLIC_API_BASE_URL`
@@ -164,6 +173,7 @@ packages/config/
 ## Auth and Security Notes
 
 - Browser authentication uses an HttpOnly same-site `mp_auth` cookie that carries the signed JWT; browser mutations also require a same-origin CSRF token.
+- The `mp_csrf` cookie is also `HttpOnly`; browser JavaScript uses the `/auth/csrf` JSON response body as the request header source instead of reading the cookie directly.
 - Registration creates inactive accounts until email activation is completed.
 - Accounts lock after 5 failed login attempts and stay locked until the password reset flow completes successfully.
 - Account activation links use DB-backed token hashes with 1-hour expiry.
@@ -179,12 +189,16 @@ packages/config/
 - Mailer now also verifies the SMTP transport at startup and logs the relay response plus `accepted` / `rejected` recipients after each send.
 - Mail transport automatically uses implicit SSL/TLS when `SMTP_SECURE=true` or `SMTP_PORT=465`; otherwise it defaults to STARTTLS with `SMTP_REQUIRE_TLS=true`.
 - API runtime can honor optional `API_PUBLIC_URL` and `WEB_PUBLIC_URL` environment variables to avoid generating auth links with `localhost` when the app is exposed behind a public domain.
+- Auth CORS now responds only for trusted web origins, and invalid auth preflight origins receive `403 Origin not allowed`.
 - Listing photo responses normalize legacy direct-MinIO URLs and now prefer web-origin `/media-files/...` links, so older rows that still store `http://localhost:9000/...` continue working in the UI.
+- The media proxy strips client `Origin` / `Referer`, blocks the bare `/media-files/` route, and forwards only an allowlisted set of response headers with `Cross-Origin-Resource-Policy: same-origin`.
 - SMTP relay acceptance alone is not enough for Gmail/Onet inbox delivery; verified sender mailbox plus aligned SPF/DKIM/DMARC remain required.
 - Verbose nodemailer transport logging is disabled in runtime to avoid leaking reset codes or SMTP session details into container logs.
+- SMTP certificate verification is enabled by default again; invalid certificates are allowed only through the explicit `SMTP_TLS_ALLOW_INVALID_CERTS=true` debug flag.
 - JSON request parsing in `apps/api/db-server.js` now enforces byte caps while reading the stream: 1 MB for normal JSON endpoints and a larger route-specific cap for `/media/upload` that matches the 10 MB decoded image limit plus base64 overhead.
 - Auth rate limit counters now live in Redis, while the forgot-password resend cooldown is persisted in PostgreSQL through the existing `User.passwordResetRequestedAt` field.
 - If Redis is unavailable, auth endpoints currently fail closed with a temporary `503` because rate limiting is treated as required security infrastructure.
+- Runtime images remove global `npm` / `npx`, and the current dependency set passes `pnpm audit --json` with zero known npm advisories as of 2026-07-10.
 - Strong password rules are enforced on registration and password reset:
   - minimum 8 characters
   - at least one lowercase letter

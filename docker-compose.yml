@@ -104,6 +104,7 @@ services:
       SMTP_PORT: ${SMTP_PORT}
       SMTP_SECURE: ${SMTP_SECURE:-}
       SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-}
+      SMTP_TLS_ALLOW_INVALID_CERTS: ${SMTP_TLS_ALLOW_INVALID_CERTS:-}
       SMTP_USER: ${SMTP_USER}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       SMTP_FROM: ${SMTP_FROM}
@@ -147,7 +148,8 @@ services:
       API_PROXY_URL: http://api:${API_PORT}
       MINIO_PROXY_URL: http://minio:9000
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   postgres_data:

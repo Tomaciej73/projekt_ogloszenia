@@ -1,6 +1,6 @@
 {
   "name": "@multiportal/web",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "MultiPortal Listing Manager web frontend (Next.js)",
   "scripts": {
@@ -8,18 +8,21 @@
     "dev:next": "next dev",
     "start": "node front-server.js",
     "build": "next build",
-    "lint": "tsc --noEmit -p tsconfig.json && node --check front-server.js && node --check runtime-config.js",
+    "lint": "tsc --noEmit -p tsconfig.json && node --check front-server.js && node --check healthcheck.js && node --check runtime-config.js",
     "test": "pnpm run lint",
     "clean": "rm -rf .next dist"
   },
   "dependencies": {
+    "@multiportal/config": "workspace:*",
     "@multiportal/shared": "workspace:*",
     "@shadcn/ui": "^0.0.4",
-    "next": "^16.0.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "dotenv": "^17.4.2",
+    "next": "^16.2.10",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "react-hook-form": "^7.0.0",
-    "zod": "^4.0.0"
+    "tsx": "^4.23.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",

@@ -1,26 +1,34 @@
 FROM node:24.18.0-alpine
 
 WORKDIR /app
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
 
-# Install all runtime dependencies
-RUN npm install dotenv tsx zod pg @prisma/client @prisma/adapter-pg prisma jsonwebtoken bullmq minio nodemailer
+RUN corepack enable
 
-# Copy application source
-COPY apps/api/db-server.js apps/api/
-COPY apps/api/docker-entrypoint.sh apps/api/
-COPY apps/api/minio.js apps/api/
-COPY apps/api/mail.js apps/api/
-COPY apps/api/runtime-config.js apps/api/
-COPY apps/api/prisma/ apps/api/prisma/
+COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml prisma.config.ts ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY apps/worker/package.json apps/worker/package.json
+COPY packages/config/package.json packages/config/package.json
+COPY packages/connectors/package.json packages/connectors/package.json
+COPY packages/shared/package.json packages/shared/package.json
+
+RUN pnpm install --prod --frozen-lockfile --ignore-scripts \
+  && pnpm rebuild prisma @prisma/engines esbuild
+
+COPY apps/api/ apps/api/
 COPY packages/ packages/
-COPY package.json package.json
-COPY prisma.config.ts prisma.config.ts
 
-RUN chmod +x apps/api/docker-entrypoint.sh
+RUN chmod +x apps/api/docker-entrypoint.sh \
+  && pnpm --dir apps/api exec prisma generate --config prisma.config.ts --schema=prisma/schema.prisma \
+  && rm -rf /usr/local/lib/node_modules/npm \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx \
+  && chown -R node:node /app
 
-# Generate Prisma client
-RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
+USER node
 
 EXPOSE 3001
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["node", "apps/api/healthcheck.js"]
 
 CMD ["sh", "apps/api/docker-entrypoint.sh"]
