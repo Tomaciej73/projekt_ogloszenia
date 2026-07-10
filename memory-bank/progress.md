@@ -38,6 +38,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `GET/POST /marketplace-accounts` - connect provider accounts
 - [x] `POST /media/upload-url` - intentionally disabled in the active runtime because direct presigned uploads bypass server-side file validation
 - [x] Email validation (regex), strong password validation (min 8, uppercase, lowercase, number, special character), reset code validation, and input sanitization
+- [x] JSON request bodies are now capped in-memory, with a 1 MB default limit and a dedicated higher cap for `/media/upload`
 - [x] Pretty JSON responses (2-space indent)
 
 ### Worker (`apps/worker/worker.js`)
@@ -71,6 +72,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Runtime SMTP config supports explicit `SMTP_FROM_NAME`, `SMTP_REPLY_TO`, `SMTP_SENDER`, and optional public URL envs for domain-based auth links
 - [x] Listing media URLs now stay on the web origin, so thumbnails no longer depend on direct `localhost:9000` or MinIO host exposure
 - [x] Uploads now accept only server-validated JPG/PNG/GIF/WebP payloads, blocking renamed text/script files and malformed image payloads before MinIO storage
+- [x] Oversized JSON/base64 uploads are rejected early with `413 Payload Too Large` instead of being buffered into RAM without a limit
 - [x] Static HTML now ships with CSP and standard browser security headers from the front server
 - [x] No hardcoded passwords, tokens, or secrets in source code
 - [x] `.env` git-ignored, `.env.example` has placeholders only
@@ -140,3 +142,4 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-09 | Mutating browser requests now require a same-origin CSRF token and static HTML is served with CSP/security headers | Adds defense-in-depth around the new cookie-based session model and reduces the blast radius of DOM/script injection bugs |
 | 2026-07-09 | Direct presigned uploads were disabled and `/media/upload` now validates real image payloads before storage | Prevents renamed text/script files and malformed uploads from being stored as listing photos |
 | 2026-07-10 | Active API/web/worker runtimes now import per-runtime validated config from `packages/config` | Restores fail-fast startup, removes dangerous `localhost`/secret fallbacks, and keeps JS runtime behavior aligned with the shared schema |
+| 2026-07-10 | The active API now enforces streaming request-body limits before buffering JSON | Prevents oversized auth/listing payloads and base64 image uploads from exhausting process memory |

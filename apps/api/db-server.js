@@ -20,6 +20,8 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 const JSON_SPACES = 2;
+const KILOBYTE = 1024;
+const MEGABYTE = 1024 * KILOBYTE;
 const RESET_EXPIRY_MS = 3600000;
 const ACTIVATION_EXPIRY_MS = 3600000;
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -30,11 +32,23 @@ const CSRF_COOKIE_NAME = "mp_csrf";
 const CSRF_HEADER_NAME = "x-csrf-token";
 const AUTH_COOKIE_MAX_AGE_SECONDS = 24 * 60 * 60;
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const DEFAULT_JSON_BODY_LIMIT_BYTES = 1 * MEGABYTE;
+const MAX_UPLOAD_BASE64_BODY_BYTES = Math.ceil(MAX_UPLOAD_FILE_SIZE_BYTES / 3) * 4;
+const UPLOAD_JSON_BODY_LIMIT_BYTES = MAX_UPLOAD_BASE64_BODY_BYTES + 256 * KILOBYTE;
 const MAX_IMAGE_DIMENSION = 12000;
 const ALLOWED_IMAGE_FILE_TYPES_LABEL = "JPG, PNG, GIF, or WebP";
 const INACTIVE_LOGIN_MESSAGE = "Your account is not active yet. Check your email for the activation link or use Forgot password to activate your account.";
 const INACTIVE_REGISTER_MESSAGE = "An account with this email already exists but is not active. Use Forgot password to activate your account and set a new password.";
 const LOCKED_LOGIN_MESSAGE = "Your account is locked after 5 failed login attempts. Use Forgot password to unlock your account and set a new password.";
+
+class RequestBodyTooLargeError extends Error {
+  constructor(limitBytes) {
+    super(`Request body exceeds the configured limit of ${limitBytes} bytes.`);
+    this.name = "RequestBodyTooLargeError";
+    this.code = "REQUEST_BODY_TOO_LARGE";
+    this.limitBytes = limitBytes;
+  }
+}
 
 function getBaseSecurityHeaders() {
   return {
@@ -74,15 +88,103 @@ function htmlResponse(res, status, html, extraHeaders = {}) {
   res.end(html);
 }
 
-function parseBody(req) {
+function formatByteLimit(limitBytes) {
+  if (limitBytes >= MEGABYTE) {
+    const sizeInMegabytes = limitBytes / MEGABYTE;
+    return `${Number.isInteger(sizeInMegabytes) ? sizeInMegabytes : sizeInMegabytes.toFixed(1)} MB`;
+  }
+  if (limitBytes >= KILOBYTE) {
+    return `${Math.ceil(limitBytes / KILOBYTE)} KB`;
+  }
+  return `${limitBytes} bytes`;
+}
+
+function parseContentLengthHeader(req) {
+  const rawHeader = String(req.headers["content-length"] || "").trim();
+  if (!rawHeader) return null;
+
+  const contentLength = Number.parseInt(rawHeader, 10);
+  return Number.isInteger(contentLength) && contentLength >= 0 ? contentLength : null;
+}
+
+function parseBody(req, { limitBytes = DEFAULT_JSON_BODY_LIMIT_BYTES } = {}) {
   return new Promise((resolve, reject) => {
+    const declaredContentLength = parseContentLengthHeader(req);
+    if (declaredContentLength !== null && declaredContentLength > limitBytes) {
+      req.resume();
+      return reject(new RequestBodyTooLargeError(limitBytes));
+    }
+
     const chunks = [];
-    req.on("data", (c) => chunks.push(c));
-    req.on("end", () => {
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
-      catch { reject(new Error("Invalid JSON")); }
-    });
+    let totalBytes = 0;
+    let settled = false;
+
+    const cleanup = () => {
+      req.off("data", onData);
+      req.off("end", onEnd);
+      req.off("error", onError);
+      req.off("aborted", onAborted);
+    };
+
+    const settle = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+
+    const onData = (chunk) => {
+      totalBytes += chunk.length;
+      if (totalBytes > limitBytes) {
+        settle(reject, new RequestBodyTooLargeError(limitBytes));
+        req.resume();
+        return;
+      }
+      chunks.push(chunk);
+    };
+
+    const onEnd = () => {
+      if (settled) return;
+      try {
+        settle(resolve, JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      } catch {
+        settle(reject, new Error("Invalid JSON"));
+      }
+    };
+
+    const onError = (error) => settle(reject, error);
+    const onAborted = () => settle(reject, new Error("Request aborted"));
+
+    req.on("data", onData);
+    req.on("end", onEnd);
+    req.on("error", onError);
+    req.on("aborted", onAborted);
   });
+}
+
+async function parseJsonBodyOrRespond(req, res, options = {}) {
+  try {
+    return await parseBody(req, options);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      jsonResponse(res, 413, {
+        error: `Request body is too large. Maximum size for this endpoint is ${formatByteLimit(error.limitBytes)}.`,
+      });
+      return null;
+    }
+
+    if (error?.message === "Invalid JSON") {
+      jsonResponse(res, 400, { error: "Invalid JSON" });
+      return null;
+    }
+
+    if (error?.message === "Request aborted") {
+      jsonResponse(res, 400, { error: "Request body upload was interrupted before completion." });
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 // ── Validation ──
@@ -744,8 +846,8 @@ const server = http.createServer(async (req, res) => {
     }
     // ── Auth: Register ──
     if (path === "/auth/register" && req.method === "POST") {
-      const body = await parseBody(req).catch(() => null);
-      if (!body) return jsonResponse(res, 400, { error: "Invalid JSON" });
+      const body = await parseJsonBodyOrRespond(req, res);
+      if (body === null) return;
 
       const name = sanitize(body.name, NAME_MAX);
       const email = sanitize(body.email, 254).toLowerCase();
@@ -812,8 +914,8 @@ const server = http.createServer(async (req, res) => {
 
     // ── Auth: Login ──
     if (path === "/auth/login" && req.method === "POST") {
-      const body = await parseBody(req).catch(() => null);
-      if (!body) return jsonResponse(res, 400, { error: "Invalid JSON" });
+      const body = await parseJsonBodyOrRespond(req, res);
+      if (body === null) return;
 
       const email = sanitize(body.email, 254).toLowerCase();
       const emailErr = validateEmail(email);
@@ -994,8 +1096,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (path === "/auth/forgot-password" && req.method === "POST") {
-      const body = await parseBody(req).catch(() => null);
-      if (!body) return jsonResponse(res, 400, { error: "Invalid JSON" });
+      const body = await parseJsonBodyOrRespond(req, res);
+      if (body === null) return;
 
       const email = sanitize(body.email, 254).toLowerCase();
       const emailErr = validateEmail(email);
@@ -1052,8 +1154,8 @@ const server = http.createServer(async (req, res) => {
 
     // ── Auth: Reset Password ──
     if (path === "/auth/reset-password" && req.method === "POST") {
-      const body = await parseBody(req).catch(() => null);
-      if (!body) return jsonResponse(res, 400, { error: "Invalid JSON" });
+      const body = await parseJsonBodyOrRespond(req, res);
+      if (body === null) return;
 
       const email = sanitize(body.email, 254).toLowerCase();
       const emailErr = validateEmail(email);
@@ -1170,8 +1272,8 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 200, { listings: listings.map((listing) => normalizeListingResponse(req, listing)) });
       }
       if (req.method === "POST") {
-        const body = await parseBody(req).catch(() => null);
-        if (!body) return jsonResponse(res, 400, { error: "Invalid JSON" });
+        const body = await parseJsonBodyOrRespond(req, res);
+        if (body === null) return;
 
         const title = sanitize(body.title, TITLE_MAX);
         const description = sanitize(body.description, DESC_MAX);
@@ -1211,8 +1313,8 @@ const server = http.createServer(async (req, res) => {
       }
       if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
       if (req.method === "PUT") {
-        const body = await parseBody(req).catch(() => null);
-        if (!body) return jsonResponse(res, 400, { error: "Invalid JSON" });
+        const body = await parseJsonBodyOrRespond(req, res);
+        if (body === null) return;
         if (body.title !== undefined) body.title = sanitize(body.title, TITLE_MAX);
         if (body.description !== undefined) body.description = sanitize(body.description, DESC_MAX);
         if (body.category !== undefined) body.category = sanitize(body.category, 200);
@@ -1245,8 +1347,9 @@ const server = http.createServer(async (req, res) => {
 
       // POST /listings/:id/photos — append photo URLs
       if (req.method === "POST") {
-        const body = await parseBody(req).catch(() => null);
-        if (!body || !Array.isArray(body.urls)) return jsonResponse(res, 400, { error: "urls array is required." });
+        const body = await parseJsonBodyOrRespond(req, res);
+        if (body === null) return;
+        if (!Array.isArray(body.urls)) return jsonResponse(res, 400, { error: "urls array is required." });
         const { photoUrls, error: photoUrlsErr } = sanitizePhotoUrls(body.urls);
         if (photoUrlsErr) return jsonResponse(res, 400, { error: photoUrlsErr });
         const current = listing.photoUrls || [];
@@ -1257,8 +1360,9 @@ const server = http.createServer(async (req, res) => {
 
       // PUT /listings/:id/photos — replace entire photoUrls array (reorder)
       if (req.method === "PUT") {
-        const body = await parseBody(req).catch(() => null);
-        if (!body || !Array.isArray(body.urls)) return jsonResponse(res, 400, { error: "urls array is required." });
+        const body = await parseJsonBodyOrRespond(req, res);
+        if (body === null) return;
+        if (!Array.isArray(body.urls)) return jsonResponse(res, 400, { error: "urls array is required." });
         const { photoUrls, error: photoUrlsErr } = sanitizePhotoUrls(body.urls);
         if (photoUrlsErr) return jsonResponse(res, 400, { error: photoUrlsErr });
         await prisma.listingDraft.update({ where: { id: listingId }, data: { photoUrls } });
@@ -1279,8 +1383,8 @@ const server = http.createServer(async (req, res) => {
     if (path === "/publication-jobs" && req.method === "POST") {
       const uid = getUserId(req);
       if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
-      const body = await parseBody(req).catch(() => null);
-      if (!body) return jsonResponse(res, 400, { error: "Invalid JSON" });
+      const body = await parseJsonBodyOrRespond(req, res);
+      if (body === null) return;
       if (!body.listingId || typeof body.listingId !== "string") {
         return jsonResponse(res, 400, { error: "listingId is required." });
       }
@@ -1354,8 +1458,9 @@ const server = http.createServer(async (req, res) => {
       const uid = getUserId(req);
       if (!uid) return jsonResponse(res, 401, { error: "Authentication required" });
 
-      const body = await parseBody(req).catch(() => null);
-      if (!body || !body.fileName || !body.data) {
+      const body = await parseJsonBodyOrRespond(req, res, { limitBytes: UPLOAD_JSON_BODY_LIMIT_BYTES });
+      if (body === null) return;
+      if (!body.fileName || !body.data) {
         return jsonResponse(res, 400, { error: "fileName and data (base64) are required." });
       }
 
@@ -1405,8 +1510,8 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 200, { accounts });
       }
       if (req.method === "POST") {
-        const body = await parseBody(req).catch(() => null);
-        if (!body) return jsonResponse(res, 400, { error: "Invalid JSON" });
+        const body = await parseJsonBodyOrRespond(req, res);
+        if (body === null) return;
         const provider = await prisma.marketplaceProvider.findUnique({ where: { slug: sanitize(body.providerSlug, 50) } });
         if (!provider) return jsonResponse(res, 400, { error: "Provider not found" });
         const account = await prisma.marketplaceAccount.upsert({
