@@ -38,9 +38,10 @@ All dependency versions must follow the project policy defined in `.clinerules/0
 1. Verify the latest stable or latest LTS version from official sources before pinning.
 2. Prefer latest LTS for runtimes such as Node.js.
 3. Prefer latest stable versions for frameworks and libraries unless compatibility issues are documented.
-4. Do not guess versions.
-5. Do not use `latest` Docker tags for production-oriented configuration.
-6. Document checked dates and source types here.
+4. Use explicit SemVer when pinning or documenting versions (`x.y.z`, or a deliberate SemVer range when there is a specific reason).
+5. Do not guess versions.
+6. Do not use `latest` Docker tags for production-oriented configuration.
+7. Document checked dates and source types here.
 
 ## Verified Versions
 
