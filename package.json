@@ -4,10 +4,10 @@
   "private": true,
   "description": "MultiPortal Listing Manager — create listing drafts once and publish across multiple marketplace platforms",
   "scripts": {
-    "dev": "pnpm --parallel -r run dev",
+    "dev": "pnpm --parallel --filter @multiportal/api --filter @multiportal/web --filter @multiportal/worker run dev",
     "build": "pnpm -r run build",
-    "lint": "pnpm -r run lint",
-    "test": "pnpm -r run test",
+    "lint": "pnpm --filter @multiportal/config run lint && pnpm --filter @multiportal/shared run lint && pnpm --filter @multiportal/connectors run lint && pnpm --filter @multiportal/api run lint && pnpm --filter @multiportal/web run lint && pnpm --filter @multiportal/worker run lint",
+    "test": "pnpm --filter @multiportal/config run test && pnpm --filter @multiportal/shared run test && pnpm --filter @multiportal/connectors run test && pnpm --filter @multiportal/api run test && pnpm --filter @multiportal/web run test && pnpm --filter @multiportal/worker run test",
     "clean": "pnpm -r run clean"
   },
   "engines": {
@@ -15,14 +15,6 @@
     "pnpm": ">=11"
   },
   "packageManager": "pnpm@11.10.0",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@prisma/engines",
-      "prisma",
-      "sharp",
-      "msgpackr-extract"
-    ]
-  },
   "devDependencies": {
     "@types/node": "26.1.0",
     "prisma": "^7.8.0",

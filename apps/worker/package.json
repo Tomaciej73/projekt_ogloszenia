@@ -4,13 +4,21 @@
   "private": true,
   "description": "MultiPortal Listing Manager background worker (BullMQ)",
   "scripts": {
-    "dev": "node worker.js",
+    "dev": "node --watch worker.js",
     "start": "node worker.js",
-    "test": "echo ok",
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc --noEmit -p tsconfig.json && node --check worker.js && node --check runtime-config.js",
+    "test": "pnpm run lint",
     "clean": "rm -rf node_modules"
   },
   "dependencies": {
+    "@multiportal/config": "workspace:*",
+    "@multiportal/connectors": "workspace:*",
     "bullmq": "^5.0.0",
     "dotenv": "^17.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "typescript": "^6.0.0"
   }
 }

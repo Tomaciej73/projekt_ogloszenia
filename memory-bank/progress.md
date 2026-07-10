@@ -17,6 +17,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] 5 Prisma migrations applied
 - [x] `.env` - all configuration via dotenv, no hardcoded credentials
 - [x] `.env.example` - placeholder values only, no real secrets, including SMTP sender placeholders
+- [x] Root and workspace `test` / `lint` scripts now execute real smoke checks instead of placeholder `echo ok`
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
@@ -54,6 +55,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `public/register.html` - standalone registration page with strong password rules, activation-required messaging, and CSRF-protected signup
 - [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint, DB-synced remaining login-attempt messaging, and CSRF-protected login
 - [x] `front-server.js` - static file server plus same-origin API and MinIO media proxy for VPS/Nginx deployment
+- [x] `apps/web/src/` scaffold no longer hardcodes `localhost` API URLs; it now supports optional `NEXT_PUBLIC_API_BASE_URL` with same-origin fallback
 - [x] Dashboard after login with listing list and stats
 - [x] Session persistence via HttpOnly auth cookie plus non-secret user cache in localStorage (survives refresh/new tab)
 
@@ -93,6 +95,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 
 ## Known Issues
 - NestJS source code exists but is not used at runtime (plain Node.js servers are active instead).
+- Current automated checks are still smoke-level only (TypeScript + runtime syntax validation); deeper unit/integration coverage is still pending.
 - 2 build scripts remain blocked (`msgpackr-extract`, `sharp`) - needed for Next.js builds, not blocking current development.
 - Auth endpoints still need rate limiting and resend throttling.
 - Manual security review is still in progress; JWT is no longer stored in `localStorage`, but any future same-origin XSS could still act through an active browser session even though it can no longer trivially exfiltrate the JWT.
@@ -143,3 +146,4 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-09 | Direct presigned uploads were disabled and `/media/upload` now validates real image payloads before storage | Prevents renamed text/script files and malformed uploads from being stored as listing photos |
 | 2026-07-10 | Active API/web/worker runtimes now import per-runtime validated config from `packages/config` | Restores fail-fast startup, removes dangerous `localhost`/secret fallbacks, and keeps JS runtime behavior aligned with the shared schema |
 | 2026-07-10 | The active API now enforces streaming request-body limits before buffering JSON | Prevents oversized auth/listing payloads and base64 image uploads from exhausting process memory |
+| 2026-07-10 | Workspace `dev`, `lint`, and `test` scripts now reflect the real runtime and real checks | Removes placeholder success paths and makes `pnpm test` a meaningful smoke test instead of `echo ok` |

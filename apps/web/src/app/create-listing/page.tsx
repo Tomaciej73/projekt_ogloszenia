@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { buildApiUrl } from "../../lib/api";
 
 export default function CreateListingPage() {
   const [form, setForm] = useState({
@@ -19,7 +20,7 @@ export default function CreateListingPage() {
     setStatus("submitting...");
 
     try {
-      const res = await fetch("http://localhost:3001/listings", {
+      const res = await fetch(buildApiUrl("/listings"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, price: Number(form.price) }),

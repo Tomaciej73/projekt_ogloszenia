@@ -15,9 +15,21 @@ import {
 const configCache = new Map<string, unknown>();
 const API_CACHE_KEY = "api";
 
-function formatConfigIssues(label: string, issues: Array<{ path: Array<string | number>; message: string }>): string {
+function formatIssuePath(path: PropertyKey[]): string {
+  const normalizedPath = path.map((segment) => {
+    if (typeof segment === "symbol") {
+      return segment.toString();
+    }
+
+    return String(segment);
+  });
+
+  return normalizedPath.join(".") || "(root)";
+}
+
+function formatConfigIssues(label: string, issues: Array<{ path: PropertyKey[]; message: string }>): string {
   const formattedIssues = issues
-    .map((issue) => `  - ${issue.path.join(".") || "(root)"}: ${issue.message}`)
+    .map((issue) => `  - ${formatIssuePath(issue.path)}: ${issue.message}`)
     .join("\n");
 
   return [

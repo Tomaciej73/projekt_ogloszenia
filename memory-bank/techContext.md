@@ -22,6 +22,7 @@
 
 - `apps/web/front-server.js` serves static pages from `apps/web/public/`
 - `apps/web/runtime-config.js` loads the validated web runtime config from `packages/config`
+- `apps/web/src/` is still a future Next.js migration path, but its API calls now use optional `NEXT_PUBLIC_API_BASE_URL` instead of hardcoded `localhost`
 - `apps/api/docker-entrypoint.sh` runs `prisma migrate deploy` and then starts `apps/api/db-server.js`
 - `apps/api/db-server.js` handles the active REST API runtime
 - `apps/api/runtime-config.js` loads the validated API runtime config from `packages/config`
@@ -111,6 +112,7 @@ Key `.env` groups:
 - **SMTP transport mode:** optional `SMTP_SECURE` plus optional `SMTP_REQUIRE_TLS`
 - **Encryption:** `TOKEN_ENCRYPTION_KEY`
 - **App:** `API_PORT`, `WEB_PORT`, `NODE_ENV`, `LOG_LEVEL`, `API_PROXY_URL`, optional `API_PUBLIC_URL`, optional `WEB_PUBLIC_URL`
+- **Next.js scaffold only (optional):** `NEXT_PUBLIC_API_BASE_URL`
 - **Provider OAuth (future):** `OLX_CLIENT_ID`, `OLX_CLIENT_SECRET`, etc.
 - `.env` values are loaded through `dotenv`, so concrete URLs must be written directly; shell-style interpolation inside values such as `http://localhost:${MINIO_API_PORT}` is not expanded by the active runtime.
 
@@ -189,7 +191,7 @@ packages/config/
 - Backend: Jest unit and integration tests
 - Frontend: Vitest plus Testing Library
 - E2E: Playwright
-- Current turn validation used syntax checks, direct loader fail-fast checks, a full `docker compose down && docker compose up -d --build`, startup `prisma migrate deploy`, and `curl` checks against `/health` and the web root; automated coverage is still pending
+- Current `pnpm test` coverage is now smoke-level only: TypeScript type-checking for scaffold packages/apps plus `node --check` validation for the active JS runtimes. Business-level unit/integration/E2E coverage is still pending.
 
 ## Constraints
 

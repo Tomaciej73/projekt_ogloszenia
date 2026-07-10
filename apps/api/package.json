@@ -4,10 +4,12 @@
   "private": true,
   "description": "MultiPortal Listing Manager REST API (NestJS)",
   "scripts": {
-    "dev": "nest start --watch",
+    "dev": "node --watch db-server.js",
+    "dev:nest": "nest start --watch",
+    "start": "node db-server.js",
     "build": "nest build",
-    "lint": "echo ok",
-    "test": "echo ok",
+    "lint": "tsc --noEmit -p tsconfig.json && node --check db-server.js && node --check mail.js && node --check minio.js && node --check runtime-config.js",
+    "test": "pnpm run lint",
     "clean": "rm -rf dist"
   },
   "dependencies": {

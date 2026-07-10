@@ -11,6 +11,7 @@ A fully working application is running: user registration/login with HttpOnly co
 - **Tech stack confirmed:** pnpm workspaces, Node.js 24 LTS, PostgreSQL 18, Prisma v7 (with pg adapter), Redis 8, BullMQ, MinIO/S3
 - **Runtime servers:** Plain Node.js HTTP servers (`apps/api/db-server.js`, `apps/web/front-server.js`) instead of NestJS/Next.js builds - chosen for immediate development velocity. NestJS source code exists as reference for future migration.
 - **Runtime config source of truth:** Active JS runtimes now import per-runtime validated config from `packages/config` through small `runtime-config.js` bridges, so API/web/worker no longer bypass schema validation with secret or `localhost` fallbacks.
+- **Workspace scripts are now honest smoke checks:** Root `pnpm test` and package-level `test` / `lint` scripts now run real type/syntax checks, while app `dev` scripts point at the active Node.js runtimes instead of placeholder echoes.
 - **Provider roadmap:** OLX (1st) -> Vinted Pro (2nd) -> Facebook Marketplace (3rd). All `research_required`.
 - **Version policy:** Latest LTS for runtimes, latest stable for frameworks, no `latest` Docker tags, verify from official sources.
 - **Pinned package manager:** pnpm@11.10.0
@@ -37,6 +38,7 @@ A fully working application is running: user registration/login with HttpOnly co
 
 ## Recent Changes
 
+- 2026-07-10: Aligned package scripts with the real runtime stack - root `pnpm dev` now targets the active API/web/worker processes, placeholder `echo ok` tests were replaced with real type/syntax smoke checks, and the Next/Nest scaffold sources no longer hardcode `localhost` for API/media URLs.
 - 2026-07-10: Hardened request-body parsing in the active API by enforcing streaming byte limits before buffering JSON into RAM, returning `413 Payload Too Large` for oversized requests, and giving `/media/upload` a dedicated higher cap sized for the existing 10 MB image limit plus base64 overhead.
 - 2026-07-10: Removed dangerous runtime config fallbacks from the active API/web/worker processes by adding per-runtime Zod loaders in `packages/config`, wiring the JS runtimes through `runtime-config.js` bridge files, requiring explicit proxy envs for the web server, and passing the missing auth/config secrets through Docker Compose.
 - 2026-07-09: Added CSRF hardening for mutating requests via `GET /auth/csrf`, `mp_csrf` cookie issuance, `X-CSRF-Token` validation in the API, and same-origin frontend fetch helpers; added CSP plus standard security headers in the web server, removing inline event handlers from active HTML so the main pages can run under `script-src-attr 'none'`.

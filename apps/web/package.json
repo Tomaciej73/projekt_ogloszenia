@@ -4,10 +4,12 @@
   "private": true,
   "description": "MultiPortal Listing Manager web frontend (Next.js)",
   "scripts": {
-    "dev": "echo next dev",
-    "build": "echo next build",
-    "lint": "echo ok",
-    "test": "echo ok",
+    "dev": "node --watch front-server.js",
+    "dev:next": "next dev",
+    "start": "node front-server.js",
+    "build": "next build",
+    "lint": "tsc --noEmit -p tsconfig.json && node --check front-server.js && node --check runtime-config.js",
+    "test": "pnpm run lint",
     "clean": "rm -rf .next dist"
   },
   "dependencies": {

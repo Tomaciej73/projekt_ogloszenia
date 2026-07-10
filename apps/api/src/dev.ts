@@ -3,11 +3,17 @@
 
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
+import { loadApiConfig } from "@multiportal/config";
 import { AppModule } from "./app.module";
 
 async function bootstrap(): Promise<void> {
+  const config = loadApiConfig();
+
   const app = await NestFactory.create(AppModule, {
-    logger: ["log", "error", "warn", "debug", "verbose"],
+    logger:
+      config.LOG_LEVEL === "debug"
+        ? ["log", "error", "warn", "debug", "verbose"]
+        : ["log", "error", "warn"],
   });
 
   app.useGlobalPipes(
@@ -19,12 +25,12 @@ async function bootstrap(): Promise<void> {
   );
 
   app.enableCors({
-    origin: "*",
+    origin: config.NODE_ENV === "production" ? [] : "*",
     credentials: true,
   });
 
-  await app.listen(3001);
-  console.log("API server listening on http://localhost:3001");
+  await app.listen(config.API_PORT);
+  console.log(`API server listening on port ${config.API_PORT}`);
 }
 
 bootstrap().catch((error) => {
