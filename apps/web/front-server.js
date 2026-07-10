@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { config } = require("./runtime-config");
-const { APP_VERSION } = require("../../packages/config/app-version");
+const { APP_VERSION } = require("@multiportal/config/app-version");
 
 const API_PROXY_URL = config.API_PROXY_URL;
 const MEDIA_PROXY_URL = config.MINIO_PROXY_URL;

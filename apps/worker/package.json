@@ -15,8 +15,7 @@
     "@multiportal/config": "workspace:*",
     "@multiportal/connectors": "workspace:*",
     "bullmq": "^5.80.1",
-    "dotenv": "^17.4.2",
-    "tsx": "^4.23.0"
+    "dotenv": "^17.4.2"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",

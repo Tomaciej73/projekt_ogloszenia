@@ -1,5 +1,4 @@
 require("dotenv").config();
-require("tsx/cjs");
 
 const { Queue } = require("bullmq");
 const { config } = require("./runtime-config");

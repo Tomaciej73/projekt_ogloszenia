@@ -1,8 +1,14 @@
 #!/bin/sh
 set -eu
 
+cd "$(dirname "$0")"
+
 echo "Applying Prisma migrations..."
-pnpm --dir apps/api exec prisma migrate deploy --config prisma.config.ts --schema=prisma/schema.prisma
+if [ -x "./node_modules/.bin/prisma" ]; then
+  ./node_modules/.bin/prisma migrate deploy --config prisma.config.ts --schema=prisma/schema.prisma
+else
+  pnpm exec prisma migrate deploy --config prisma.config.ts --schema=prisma/schema.prisma
+fi
 
 echo "Starting API server..."
-exec node apps/api/db-server.js
+exec node db-server.js

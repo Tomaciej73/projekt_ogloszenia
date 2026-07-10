@@ -13,3 +13,7 @@ onlyBuiltDependencies:
   - "esbuild"
 minimumReleaseAgeExclude:
   - bullmq@5.80.1
+allowBuilds:
+  esbuild: set this to true or false
+  msgpackr-extract: set this to true or false
+  sharp: set this to true or false

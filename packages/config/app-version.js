@@ -1,12 +1,12 @@
 const fs = require("fs");
 const path = require("path");
 
-const ROOT_PACKAGE_JSON_PATH = path.resolve(__dirname, "../../package.json");
+const PACKAGE_JSON_PATH = path.join(__dirname, "package.json");
 
 let cachedAppVersion = null;
 
-function readRootPackageJson() {
-  const packageJsonContents = fs.readFileSync(ROOT_PACKAGE_JSON_PATH, "utf8");
+function readPackageJson() {
+  const packageJsonContents = fs.readFileSync(PACKAGE_JSON_PATH, "utf8");
   return JSON.parse(packageJsonContents);
 }
 
@@ -15,10 +15,10 @@ function getAppVersion() {
     return cachedAppVersion;
   }
 
-  const packageJson = readRootPackageJson();
+  const packageJson = readPackageJson();
   const version = String(packageJson.version || "").trim();
   if (!version) {
-    throw new Error(`Application version is missing in ${ROOT_PACKAGE_JSON_PATH}.`);
+    throw new Error(`Application version is missing in ${PACKAGE_JSON_PATH}.`);
   }
 
   cachedAppVersion = version;

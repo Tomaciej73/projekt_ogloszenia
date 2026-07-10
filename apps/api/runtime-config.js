@@ -1,7 +1,6 @@
 require("dotenv").config();
-require("tsx/cjs");
 
-const { loadApiConfig } = require("../../packages/config/src/config.ts");
+const { loadApiConfig } = require("@multiportal/config/dist/config.js");
 
 const config = loadApiConfig();
 

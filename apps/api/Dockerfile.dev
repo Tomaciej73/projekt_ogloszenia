@@ -1,12 +1,12 @@
-FROM node:24.18.0-alpine
+FROM node:24.18.0-alpine AS builder
 
-WORKDIR /app
+WORKDIR /workspace
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 
 RUN corepack enable
 
-COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml prisma.config.ts ./
+COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
@@ -14,21 +14,29 @@ COPY packages/config/package.json packages/config/package.json
 COPY packages/connectors/package.json packages/connectors/package.json
 COPY packages/shared/package.json packages/shared/package.json
 
-RUN pnpm install --prod --frozen-lockfile --ignore-scripts \
-  && pnpm rebuild prisma @prisma/engines esbuild
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY apps/api/ apps/api/
 COPY packages/ packages/
 
-RUN chmod +x apps/api/docker-entrypoint.sh \
-  && pnpm --dir apps/api exec prisma generate --config prisma.config.ts --schema=prisma/schema.prisma \
-  && rm -rf /usr/local/lib/node_modules/npm \
-  && rm -f /usr/local/bin/npm /usr/local/bin/npx \
-  && chown -R node:node /app
+RUN pnpm --filter @multiportal/config run build \
+  && pnpm --filter @multiportal/shared run build \
+  && pnpm --filter @multiportal/connectors run build \
+  && pnpm --filter @multiportal/api deploy --prod --legacy --ignore-scripts /prod/app \
+  && pnpm --dir /prod/app --config.minimumReleaseAge=0 rebuild prisma @prisma/engines esbuild \
+  && /prod/app/node_modules/.bin/prisma generate --config /prod/app/prisma.config.ts --schema /prod/app/prisma/schema.prisma \
+  && chmod +x /prod/app/docker-entrypoint.sh
+
+FROM node:24.18.0-alpine
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --chown=node:node --from=builder /prod/app/ ./
 
 USER node
 
 EXPOSE 3001
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["node", "apps/api/healthcheck.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["node", "healthcheck.js"]
 
-CMD ["sh", "apps/api/docker-entrypoint.sh"]
+CMD ["sh", "docker-entrypoint.sh"]

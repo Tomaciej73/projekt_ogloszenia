@@ -1,5 +1,5 @@
 const http = require("http");
-const { APP_VERSION } = require("../../packages/config/app-version");
+const { APP_VERSION } = require("@multiportal/config/app-version");
 
 const server = http.createServer((req, res) => {
   res.setHeader("Content-Type", "application/json");

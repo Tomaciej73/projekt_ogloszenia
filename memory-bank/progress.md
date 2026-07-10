@@ -13,7 +13,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Docker Compose with PostgreSQL 18, Redis 8, MinIO, API (3001), Web (3000)
 - [x] API container startup now runs `prisma migrate deploy` before serving requests, so Docker/VPS upgrades apply pending schema changes automatically
 - [x] Active API/web/worker runtimes now load per-runtime validated config from `packages/config` via bridge files, instead of reading `process.env` with dangerous secret or `localhost` fallbacks
-- [x] App runtime images now use an explicit `.dockerignore`, workspace-locked production installs, explicit Prisma config paths, non-root `node` users, and Docker healthchecks
+- [x] App runtime images now use an explicit `.dockerignore`, multi-stage `pnpm deploy` runtime packaging, explicit Prisma config paths, non-root `node` users, and Docker healthchecks
 - [x] Prisma v7 schema with 12 entities and 4 enums
 - [x] 5 Prisma migrations applied
 - [x] `.env` - all configuration via dotenv, no hardcoded credentials
@@ -59,7 +59,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `public/register.html` - standalone registration page with strong password rules, activation-required messaging, and CSRF-protected signup
 - [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint, DB-synced remaining login-attempt messaging, and CSRF-protected login
 - [x] `front-server.js` - static file server plus same-origin API and MinIO media proxy for VPS/Nginx deployment
-- [x] User-visible version labels now render from the shared app SemVer (`0.4.1`) instead of duplicated hardcoded footer/log strings
+- [x] User-visible version labels now render from the shared package SemVer (`0.4.1`) instead of duplicated hardcoded footer/log strings
 - [x] Main auth flows now surface rate-limit hits as warning toasts with retry timing
 - [x] `apps/web/src/` scaffold no longer hardcodes `localhost` API URLs; it now supports optional `NEXT_PUBLIC_API_BASE_URL` with same-origin fallback
 - [x] Dashboard after login with listing list and stats
@@ -86,6 +86,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Static HTML now ships with CSP and standard browser security headers from the front server
 - [x] Auth CORS now allows only trusted web origins, invalid auth preflights return `403`, and the `mp_csrf` cookie is now `HttpOnly`
 - [x] SMTP certificate verification is enabled by default; invalid certificates require the explicit `SMTP_TLS_ALLOW_INVALID_CERTS=true` debugging flag
+- [x] Runtime images no longer need `tsx` because API/web/worker load validated config from compiled `@multiportal/config/dist`
 - [x] Controlled SemVer dependency pass completed for `0.4.1`, with verified version bumps/overrides and a clean `pnpm audit --json` result
 - [x] No hardcoded passwords, tokens, or secrets in source code
 - [x] `.env` git-ignored, `.env.example` has placeholders only
@@ -109,6 +110,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - Current automated checks are still smoke-level only (TypeScript + runtime syntax validation); deeper unit/integration coverage is still pending.
 - 2 build scripts remain blocked (`msgpackr-extract`, `sharp`) - needed for Next.js builds, not blocking current development.
 - Auth rate limiting now depends on Redis availability; if Redis is down, protected `/auth/*` requests currently fail closed with a temporary `503` until Redis recovers.
+- Docker BuildKit cache can still dwarf the final runtime images (currently ~27.9 GB locally), so VPS disk pressure now depends more on pruning stale cache/images than on live app volumes.
 - Manual security review is still in progress; JWT is no longer stored in `localStorage`, but any future same-origin XSS could still act through an active browser session even though it can no longer trivially exfiltrate the JWT.
 - The upload path now blocks renamed/corrupted non-images through MIME sniffing and image-structure checks, but it does not yet run a dedicated antivirus engine such as ClamAV for full malware scanning.
 - Real inbox delivery still depends on a verified `SMTP_FROM` sender and aligned SPF/DKIM/DMARC for the chosen SMTP relay.
@@ -168,3 +170,4 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-10 | The assessment methodology now combines ZAP, Burp-family tooling, Skipfish, Trivy, Semgrep, and Gitleaks under a NIST SP 800-115-style report | Keeps web-runtime, code, dependency, container, and secret-detection evidence in one place before remediation starts |
 | 2026-07-10 | `/media-files` and auth cross-origin behavior were tightened, SMTP certificate validation was restored, and app containers now run as non-root with healthchecks | Closes the main medium-severity findings from the 2026-07-10 local assessment and stabilizes Docker runtime startup |
 | 2026-07-10 | Controlled dependency pass updated the runtime to `0.4.1` and produced a clean `pnpm audit --json` report | Removes known npm advisory findings without blind version bumps and keeps the repo aligned with verified official versions |
+| 2026-07-10 | Runtime images now use multi-stage `pnpm deploy` packaging and compiled config loading instead of runtime `tsx` | Cuts final Docker image size substantially while keeping fail-fast config validation and healthchecked non-root containers |

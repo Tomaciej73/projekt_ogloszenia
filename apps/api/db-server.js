@@ -8,7 +8,7 @@ const { Pool } = require("pg");
 const { config } = require("./runtime-config");
 const { ensureBucket, minioClient, BUCKET } = require("./minio");
 const { sendPasswordResetEmail, sendAccountActivationEmail, formatMailDeliveryResult } = require("./mail");
-const { APP_VERSION } = require("../../packages/config/app-version");
+const { APP_VERSION } = require("@multiportal/config/app-version");
 
 const REDIS_URL = config.REDIS_URL;
 const publicationQueue = new Queue("publication", { connection: { url: REDIS_URL } });

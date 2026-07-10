@@ -1,7 +1,6 @@
 require("dotenv").config();
-require("tsx/cjs");
 
-const { loadWebConfig } = require("../../packages/config/src/config.ts");
+const { loadWebConfig } = require("@multiportal/config/dist/config.js");
 
 const config = loadWebConfig();
 

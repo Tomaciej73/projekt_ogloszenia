@@ -6,6 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
+    "build": "tsc -p tsconfig.json",
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "pnpm run lint",
     "clean": "rm -rf dist"
@@ -13,5 +14,8 @@
   "dependencies": {
     "@types/node": "^26.1.0",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0"
   }
 }

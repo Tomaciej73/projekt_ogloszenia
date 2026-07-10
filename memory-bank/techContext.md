@@ -21,15 +21,15 @@
 ## Runtime Entry Points
 
 - `apps/web/front-server.js` serves static pages from `apps/web/public/`
-- `apps/web/runtime-config.js` loads the validated web runtime config from `packages/config`
+- `apps/web/runtime-config.js` loads the validated web runtime config from compiled `@multiportal/config/dist/config.js`
 - `apps/web/src/` is still a future Next.js migration path, but its API calls now use optional `NEXT_PUBLIC_API_BASE_URL` instead of hardcoded `localhost`
-- `apps/api/docker-entrypoint.sh` runs `prisma migrate deploy` and then starts `apps/api/db-server.js`
+- `apps/api/docker-entrypoint.sh` runs `prisma migrate deploy` and then starts `db-server.js` from the pruned runtime app root
 - `apps/api/db-server.js` handles the active REST API runtime
 - `apps/api/healthcheck.js`, `apps/web/healthcheck.js`, and `apps/worker/healthcheck.js` provide container-native runtime health probes
-- `apps/api/runtime-config.js` loads the validated API runtime config from `packages/config`
+- `apps/api/runtime-config.js` loads the validated API runtime config from compiled `@multiportal/config/dist/config.js`
 - `apps/worker/worker.js` processes BullMQ jobs
-- `apps/worker/runtime-config.js` loads the validated worker runtime config from `packages/config`
-- `packages/config/app-version.js` reads the root workspace SemVer and serves as the runtime version source of truth for API logs/health and injected HTML footer labels
+- `apps/worker/runtime-config.js` loads the validated worker runtime config from compiled `@multiportal/config/dist/config.js`
+- `packages/config/app-version.js` reads the shared `@multiportal/config` package SemVer and serves as the runtime version source of truth for API logs/health and injected HTML footer labels
 
 Next.js and NestJS source scaffolding remains in the repository, but those entry points are not the active runtime today.
 
@@ -109,6 +109,8 @@ Checked 2026-07-10 via official Node.js / npm registry / Docker Hub sources.
 - Browser clients now call the web origin only; `apps/web/front-server.js` proxies selected API routes to the API runtime target.
 - Browser-rendered listing photos also stay on the web origin; `apps/web/front-server.js` proxies `/media-files/...` to MinIO so thumbnails do not depend on exposing direct MinIO hostnames.
 - API/web/worker app containers now run as the non-root `node` user and expose image-defined Docker healthchecks.
+- As of 2026-07-10 the final runtime image sizes are approximately `751 MB` (API), `731 MB` (web), and `276 MB` (worker); Docker BuildKit cache is still much larger and requires operational pruning when disk pressure matters.
+- Security scanners are not part of `docker-compose.yml` and must remain isolated from the runtime stack; run them as disposable separate containers or local tools, then clean up their images/cache after the assessment.
 
 ## Environment Variables
 
@@ -198,7 +200,7 @@ packages/config/
 - JSON request parsing in `apps/api/db-server.js` now enforces byte caps while reading the stream: 1 MB for normal JSON endpoints and a larger route-specific cap for `/media/upload` that matches the 10 MB decoded image limit plus base64 overhead.
 - Auth rate limit counters now live in Redis, while the forgot-password resend cooldown is persisted in PostgreSQL through the existing `User.passwordResetRequestedAt` field.
 - If Redis is unavailable, auth endpoints currently fail closed with a temporary `503` because rate limiting is treated as required security infrastructure.
-- Runtime images remove global `npm` / `npx`, and the current dependency set passes `pnpm audit --json` with zero known npm advisories as of 2026-07-10.
+- Runtime images are produced through multi-stage `pnpm deploy` packaging, remove the runtime `tsx` dependency, and the current dependency set passes `pnpm audit --json` with zero known npm advisories as of 2026-07-10.
 - Strong password rules are enforced on registration and password reset:
   - minimum 8 characters
   - at least one lowercase letter

@@ -1,12 +1,12 @@
-FROM node:24.18.0-alpine
+FROM node:24.18.0-alpine AS builder
 
-WORKDIR /app
+WORKDIR /workspace
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 
 RUN corepack enable
 
-COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml prisma.config.ts ./
+COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
@@ -14,18 +14,26 @@ COPY packages/config/package.json packages/config/package.json
 COPY packages/connectors/package.json packages/connectors/package.json
 COPY packages/shared/package.json packages/shared/package.json
 
-RUN pnpm install --prod --frozen-lockfile --ignore-scripts \
-  && pnpm rebuild esbuild
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY apps/worker/ apps/worker/
 COPY packages/ packages/
 
-RUN rm -rf /usr/local/lib/node_modules/npm \
-  && rm -f /usr/local/bin/npm /usr/local/bin/npx \
-  && chown -R node:node /app
+RUN pnpm --filter @multiportal/config run build \
+  && pnpm --filter @multiportal/shared run build \
+  && pnpm --filter @multiportal/connectors run build \
+  && pnpm --filter @multiportal/worker deploy --prod --legacy --ignore-scripts /prod/app \
+  && pnpm --dir /prod/app --config.minimumReleaseAge=0 rebuild esbuild
+
+FROM node:24.18.0-alpine
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --chown=node:node --from=builder /prod/app/ ./
 
 USER node
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["node", "apps/worker/healthcheck.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["node", "healthcheck.js"]
 
-CMD ["node", "apps/worker/worker.js"]
+CMD ["node", "worker.js"]
