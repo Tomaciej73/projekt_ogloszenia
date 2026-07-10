@@ -78,6 +78,29 @@
       hint.style.color = tone === 'error' ? '#b91c1c' : '#8a6d3b';
     }
 
+    function buildRateLimitMessage(res, data, fallbackMessage) {
+      const retryAfterFromHeader = Number(res?.headers?.get('Retry-After'));
+      const retryAfterSeconds = Number.isFinite(data?.retryAfterSeconds) && data.retryAfterSeconds > 0
+        ? data.retryAfterSeconds
+        : Number.isFinite(retryAfterFromHeader) && retryAfterFromHeader > 0
+          ? retryAfterFromHeader
+          : 0;
+
+      const baseMessage = String(data?.error || fallbackMessage || 'Too many requests. Please try again later.').trim();
+      if (retryAfterSeconds < 1) {
+        return baseMessage;
+      }
+
+      if (retryAfterSeconds >= 60) {
+        const minutes = Math.floor(retryAfterSeconds / 60);
+        const seconds = retryAfterSeconds % 60;
+        const formatted = seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+        return `${baseMessage} Try again in ${formatted}.`;
+      }
+
+      return `${baseMessage} Try again in ${retryAfterSeconds}s.`;
+    }
+
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('submitBtn');
@@ -115,6 +138,11 @@
 
           if (res.status === 423 || data.accountLocked) {
             setAttemptsHint('Account locked. Use Forgot password on the main page to unlock it.', 'error');
+          }
+          if (res.status === 429) {
+            const rateLimitMessage = buildRateLimitMessage(res, data, 'Too many login attempts. Please try again later.');
+            setAttemptsHint(rateLimitMessage, 'warning');
+            throw new Error(rateLimitMessage);
           }
 
           throw new Error(data.error || 'Login failed');

@@ -189,3 +189,11 @@ apps/api/src/
 - `GET /auth/activate?email=...&token=...` activates the account when the token hash matches and the expiry has not passed.
 - If the activation link expires, the account remains in the database as inactive and later registration attempts on the same email are rejected with guidance to use `Forgot password`.
 - `POST /auth/reset-password` also activates inactive accounts after the user proves mailbox ownership with the emailed reset code and sets a new password.
+
+### 16. Auth Rate Limit and Reset Resend Throttle
+- Every `/auth/*` request now passes through a generic authentication rate limiter keyed by client IP in the active API runtime.
+- Sensitive routes (`/auth/login`, `/auth/register`, `/auth/activate`, `/auth/forgot-password`, `/auth/reset-password`) also have tighter route-specific limits.
+- Login, registration, forgot-password, and reset-password requests add a second limiter keyed by normalized email address when an email is present.
+- The active API stores auth limiter counters in Redis, so request counters survive API restarts and can be shared by multiple API instances as long as they use the same Redis backend.
+- `POST /auth/forgot-password` also enforces a database-backed resend cooldown via `passwordResetRequestedAt`, so recently sent reset codes cannot be re-requested immediately even after an API restart.
+- Rate-limit `429` responses include `Retry-After`, `X-RateLimit-*`, and `retryAfterSeconds`, allowing the active frontend to show user-facing throttle warnings with real wait times.

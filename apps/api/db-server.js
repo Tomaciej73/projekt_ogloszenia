@@ -8,9 +8,11 @@ const { Pool } = require("pg");
 const { config } = require("./runtime-config");
 const { ensureBucket, minioClient, BUCKET } = require("./minio");
 const { sendPasswordResetEmail, sendAccountActivationEmail, formatMailDeliveryResult } = require("./mail");
+const { APP_VERSION } = require("../../packages/config/app-version");
 
 const REDIS_URL = config.REDIS_URL;
 const publicationQueue = new Queue("publication", { connection: { url: REDIS_URL } });
+const publicationQueueRedisClientPromise = publicationQueue.client;
 
 const JWT_SECRET = config.JWT_SECRET;
 const JWT_EXPIRY = "24h";
@@ -40,6 +42,19 @@ const ALLOWED_IMAGE_FILE_TYPES_LABEL = "JPG, PNG, GIF, or WebP";
 const INACTIVE_LOGIN_MESSAGE = "Your account is not active yet. Check your email for the activation link or use Forgot password to activate your account.";
 const INACTIVE_REGISTER_MESSAGE = "An account with this email already exists but is not active. Use Forgot password to activate your account and set a new password.";
 const LOCKED_LOGIN_MESSAGE = "Your account is locked after 5 failed login attempts. Use Forgot password to unlock your account and set a new password.";
+const AUTH_RATE_LIMIT_WINDOW_MS = config.AUTH_RATE_LIMIT_WINDOW_MS;
+const AUTH_RATE_LIMIT_MAX_REQUESTS = config.AUTH_RATE_LIMIT_MAX_REQUESTS;
+const AUTH_LOGIN_RATE_LIMIT_WINDOW_MS = config.AUTH_LOGIN_RATE_LIMIT_WINDOW_MS;
+const AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS = config.AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS;
+const AUTH_REGISTER_RATE_LIMIT_WINDOW_MS = config.AUTH_REGISTER_RATE_LIMIT_WINDOW_MS;
+const AUTH_REGISTER_RATE_LIMIT_MAX_REQUESTS = config.AUTH_REGISTER_RATE_LIMIT_MAX_REQUESTS;
+const AUTH_FORGOT_PASSWORD_RATE_LIMIT_WINDOW_MS = config.AUTH_FORGOT_PASSWORD_RATE_LIMIT_WINDOW_MS;
+const AUTH_FORGOT_PASSWORD_RATE_LIMIT_MAX_REQUESTS = config.AUTH_FORGOT_PASSWORD_RATE_LIMIT_MAX_REQUESTS;
+const AUTH_RESET_PASSWORD_RATE_LIMIT_WINDOW_MS = config.AUTH_RESET_PASSWORD_RATE_LIMIT_WINDOW_MS;
+const AUTH_RESET_PASSWORD_RATE_LIMIT_MAX_REQUESTS = config.AUTH_RESET_PASSWORD_RATE_LIMIT_MAX_REQUESTS;
+const AUTH_ACTIVATE_RATE_LIMIT_WINDOW_MS = config.AUTH_ACTIVATE_RATE_LIMIT_WINDOW_MS;
+const AUTH_ACTIVATE_RATE_LIMIT_MAX_REQUESTS = config.AUTH_ACTIVATE_RATE_LIMIT_MAX_REQUESTS;
+const AUTH_PASSWORD_RESET_RESEND_COOLDOWN_MS = config.AUTH_PASSWORD_RESET_RESEND_COOLDOWN_MS;
 
 class RequestBodyTooLargeError extends Error {
   constructor(limitBytes) {
@@ -311,6 +326,98 @@ function getMediaBaseUrl(req) {
     return `${protocol}://${forwardedHost}`;
   }
   return getWebBaseUrl(req);
+}
+
+function getClientIp(req) {
+  const forwardedFor = req.headers["x-forwarded-for"];
+  const rawForwardedFor = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
+  if (typeof rawForwardedFor === "string" && rawForwardedFor.trim()) {
+    return rawForwardedFor.split(",")[0].trim();
+  }
+
+  return String(req.socket?.remoteAddress || req.connection?.remoteAddress || "unknown").trim() || "unknown";
+}
+
+function buildRateLimitKey(parts) {
+  return parts
+    .map((part) => String(part || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(":");
+}
+
+function unwrapRedisMultiValue(entry) {
+  if (Array.isArray(entry) && entry.length >= 2) {
+    return entry[1];
+  }
+  return entry;
+}
+
+async function consumeAuthRateLimit(key, { windowMs, maxRequests }) {
+  const now = Date.now();
+  const redisClient = await publicationQueueRedisClientPromise;
+  const redisKey = `auth:ratelimit:${key}`;
+  const multiResult = await redisClient
+    .multi()
+    .incr(redisKey)
+    .pexpire(redisKey, windowMs, "NX")
+    .pttl(redisKey)
+    .exec();
+
+  const count = Number(unwrapRedisMultiValue(multiResult?.[0]));
+  let ttlMs = Number(unwrapRedisMultiValue(multiResult?.[2]));
+
+  if (!Number.isFinite(count) || count < 1) {
+    throw new Error(`Redis returned an invalid auth rate limit counter for key ${redisKey}.`);
+  }
+
+  if (!Number.isFinite(ttlMs) || ttlMs < 1) {
+    await redisClient.pexpire(redisKey, windowMs);
+    ttlMs = windowMs;
+  }
+
+  const resetAt = now + ttlMs;
+  return {
+    allowed: count <= maxRequests,
+    limit: maxRequests,
+    remaining: count <= maxRequests ? Math.max(0, maxRequests - count) : 0,
+    resetAt,
+    retryAfterSeconds: Math.max(1, Math.ceil(ttlMs / 1000)),
+  };
+}
+
+function buildRateLimitHeaders(result) {
+  return {
+    "Retry-After": String(result.retryAfterSeconds),
+    "X-RateLimit-Limit": String(result.limit),
+    "X-RateLimit-Remaining": String(result.remaining),
+    "X-RateLimit-Reset": String(Math.ceil(result.resetAt / 1000)),
+  };
+}
+
+async function enforceAuthRateLimitOrRespond(req, res, { key, windowMs, maxRequests, error }) {
+  try {
+    const result = await consumeAuthRateLimit(key, { windowMs, maxRequests });
+    if (result.allowed) {
+      return true;
+    }
+
+    jsonResponse(res, 429, { error, retryAfterSeconds: result.retryAfterSeconds }, buildRateLimitHeaders(result));
+    return false;
+  } catch (rateLimitError) {
+    console.error("Auth rate limit backend failed:", rateLimitError.message);
+    jsonResponse(res, 503, {
+      error: "Authentication protection is temporarily unavailable. Please try again in a moment.",
+    }, {
+      "Retry-After": "5",
+      "Cache-Control": "no-store",
+    });
+    return false;
+  }
+}
+
+function getRemainingCooldownMs(dateValue, cooldownMs) {
+  if (!(dateValue instanceof Date)) return 0;
+  return Math.max(0, dateValue.getTime() + cooldownMs - Date.now());
 }
 
 function buildActivationUrl(req, email, token) {
@@ -829,8 +936,21 @@ const server = http.createServer(async (req, res) => {
 
   const requestUrl = new URL(req.url, `http://${req.headers.host}`);
   const path = requestUrl.pathname;
+  const clientIp = getClientIp(req);
 
   try {
+    if (path.startsWith("/auth/")) {
+      const genericAuthLimitKey = buildRateLimitKey(["auth", "all", "ip", clientIp]);
+      if (!await enforceAuthRateLimitOrRespond(req, res, {
+        key: genericAuthLimitKey,
+        windowMs: AUTH_RATE_LIMIT_WINDOW_MS,
+        maxRequests: AUTH_RATE_LIMIT_MAX_REQUESTS,
+        error: "Too many authentication requests from this IP address. Please try again later.",
+      })) {
+        return;
+      }
+    }
+
     if (path === "/auth/csrf" && req.method === "GET") {
       const existingToken = normalizeCsrfToken(parseCookies(req)[CSRF_COOKIE_NAME]);
       const csrfToken = existingToken || generateCsrfToken();
@@ -851,6 +971,26 @@ const server = http.createServer(async (req, res) => {
 
       const name = sanitize(body.name, NAME_MAX);
       const email = sanitize(body.email, 254).toLowerCase();
+      const registerIpLimitKey = buildRateLimitKey(["auth", "register", "ip", clientIp]);
+      if (!await enforceAuthRateLimitOrRespond(req, res, {
+        key: registerIpLimitKey,
+        windowMs: AUTH_REGISTER_RATE_LIMIT_WINDOW_MS,
+        maxRequests: AUTH_REGISTER_RATE_LIMIT_MAX_REQUESTS,
+        error: "Too many registration attempts from this IP address. Please try again later.",
+      })) {
+        return;
+      }
+      if (email) {
+        const registerEmailLimitKey = buildRateLimitKey(["auth", "register", "email", email]);
+        if (!await enforceAuthRateLimitOrRespond(req, res, {
+          key: registerEmailLimitKey,
+          windowMs: AUTH_REGISTER_RATE_LIMIT_WINDOW_MS,
+          maxRequests: AUTH_REGISTER_RATE_LIMIT_MAX_REQUESTS,
+          error: "Too many registration attempts for this email address. Please try again later.",
+        })) {
+          return;
+        }
+      }
       const pwdErr = validatePassword(body.password);
       const emailErr = validateEmail(email);
 
@@ -918,6 +1058,26 @@ const server = http.createServer(async (req, res) => {
       if (body === null) return;
 
       const email = sanitize(body.email, 254).toLowerCase();
+      const loginIpLimitKey = buildRateLimitKey(["auth", "login", "ip", clientIp]);
+      if (!await enforceAuthRateLimitOrRespond(req, res, {
+        key: loginIpLimitKey,
+        windowMs: AUTH_LOGIN_RATE_LIMIT_WINDOW_MS,
+        maxRequests: AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS,
+        error: "Too many login attempts from this IP address. Please try again later.",
+      })) {
+        return;
+      }
+      if (email) {
+        const loginEmailLimitKey = buildRateLimitKey(["auth", "login", "email", email]);
+        if (!await enforceAuthRateLimitOrRespond(req, res, {
+          key: loginEmailLimitKey,
+          windowMs: AUTH_LOGIN_RATE_LIMIT_WINDOW_MS,
+          maxRequests: AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS,
+          error: "Too many login attempts for this email address. Please try again later.",
+        })) {
+          return;
+        }
+      }
       const emailErr = validateEmail(email);
       if (emailErr) return jsonResponse(res, 400, { error: emailErr });
       if (!body.password) return jsonResponse(res, 400, { error: "Password is required." });
@@ -999,6 +1159,15 @@ const server = http.createServer(async (req, res) => {
       const email = sanitize(requestUrl.searchParams.get("email"), 254).toLowerCase();
       const token = normalizeActivationToken(requestUrl.searchParams.get("token"));
       const appUrl = `${getWebBaseUrl(req)}/`;
+      const activateIpLimitKey = buildRateLimitKey(["auth", "activate", "ip", clientIp]);
+      if (!await enforceAuthRateLimitOrRespond(req, res, {
+        key: activateIpLimitKey,
+        windowMs: AUTH_ACTIVATE_RATE_LIMIT_WINDOW_MS,
+        maxRequests: AUTH_ACTIVATE_RATE_LIMIT_MAX_REQUESTS,
+        error: "Too many activation requests from this IP address. Please try again later.",
+      })) {
+        return;
+      }
 
       if (!email || !token) {
         return htmlResponse(res, 400, renderAuthStatusPage({
@@ -1100,14 +1269,44 @@ const server = http.createServer(async (req, res) => {
       if (body === null) return;
 
       const email = sanitize(body.email, 254).toLowerCase();
+      const forgotPasswordIpLimitKey = buildRateLimitKey(["auth", "forgot-password", "ip", clientIp]);
+      if (!await enforceAuthRateLimitOrRespond(req, res, {
+        key: forgotPasswordIpLimitKey,
+        windowMs: AUTH_FORGOT_PASSWORD_RATE_LIMIT_WINDOW_MS,
+        maxRequests: AUTH_FORGOT_PASSWORD_RATE_LIMIT_MAX_REQUESTS,
+        error: "Too many password reset requests from this IP address. Please try again later.",
+      })) {
+        return;
+      }
+      if (email) {
+        const forgotPasswordEmailLimitKey = buildRateLimitKey(["auth", "forgot-password", "email", email]);
+        if (!await enforceAuthRateLimitOrRespond(req, res, {
+          key: forgotPasswordEmailLimitKey,
+          windowMs: AUTH_FORGOT_PASSWORD_RATE_LIMIT_WINDOW_MS,
+          maxRequests: AUTH_FORGOT_PASSWORD_RATE_LIMIT_MAX_REQUESTS,
+          error: "Too many password reset requests for this email address. Please try again later.",
+        })) {
+          return;
+        }
+      }
       const emailErr = validateEmail(email);
       if (emailErr) return jsonResponse(res, 400, { error: emailErr });
 
       const user = await prisma.user.findUnique({
         where: { email },
-        select: { id: true, name: true, isActive: true, lockedAt: true },
+        select: { id: true, name: true, isActive: true, lockedAt: true, passwordResetRequestedAt: true },
       });
       if (!user) return jsonResponse(res, 404, { error: "No account found for this email address." });
+
+      const remainingResetCooldownMs = getRemainingCooldownMs(user.passwordResetRequestedAt, AUTH_PASSWORD_RESET_RESEND_COOLDOWN_MS);
+      if (remainingResetCooldownMs > 0) {
+        return jsonResponse(res, 429, {
+          error: "A reset code was already sent recently. Please wait before requesting another code.",
+          retryAfterSeconds: Math.max(1, Math.ceil(remainingResetCooldownMs / 1000)),
+        }, {
+          "Retry-After": String(Math.max(1, Math.ceil(remainingResetCooldownMs / 1000))),
+        });
+      }
 
       const resetCode = generateResetCode();
       const passwordResetCodeExpiresAt = new Date(Date.now() + RESET_EXPIRY_MS);
@@ -1158,6 +1357,26 @@ const server = http.createServer(async (req, res) => {
       if (body === null) return;
 
       const email = sanitize(body.email, 254).toLowerCase();
+      const resetPasswordIpLimitKey = buildRateLimitKey(["auth", "reset-password", "ip", clientIp]);
+      if (!await enforceAuthRateLimitOrRespond(req, res, {
+        key: resetPasswordIpLimitKey,
+        windowMs: AUTH_RESET_PASSWORD_RATE_LIMIT_WINDOW_MS,
+        maxRequests: AUTH_RESET_PASSWORD_RATE_LIMIT_MAX_REQUESTS,
+        error: "Too many password reset submissions from this IP address. Please try again later.",
+      })) {
+        return;
+      }
+      if (email) {
+        const resetPasswordEmailLimitKey = buildRateLimitKey(["auth", "reset-password", "email", email]);
+        if (!await enforceAuthRateLimitOrRespond(req, res, {
+          key: resetPasswordEmailLimitKey,
+          windowMs: AUTH_RESET_PASSWORD_RATE_LIMIT_WINDOW_MS,
+          maxRequests: AUTH_RESET_PASSWORD_RATE_LIMIT_MAX_REQUESTS,
+          error: "Too many password reset submissions for this email address. Please try again later.",
+        })) {
+          return;
+        }
+      }
       const emailErr = validateEmail(email);
       const resetCode = normalizeResetCode(body.code ?? body.token);
       const resetCodeErr = validateResetCode(resetCode);
@@ -1256,7 +1475,7 @@ const server = http.createServer(async (req, res) => {
 
     // ── Health ──
     if (path === "/" || path === "/health")
-      return jsonResponse(res, 200, { status: "ok", db: "connected", version: "0.3.0" });
+      return jsonResponse(res, 200, { status: "ok", db: "connected", version: APP_VERSION });
 
     // ── Listings ──
     if (path === "/listings") {
@@ -1531,4 +1750,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(config.API_PORT, () => console.log(`API ready at http://localhost:${config.API_PORT} (v0.3.0)`));
+server.listen(config.API_PORT, () => console.log(`API ready at http://localhost:${config.API_PORT} (v${APP_VERSION})`));

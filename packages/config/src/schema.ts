@@ -100,6 +100,22 @@ export const authEnvSchema = z.object({
   TOKEN_ENCRYPTION_KEY: z.string().length(64).regex(/^[0-9a-fA-F]+$/),
 });
 
+export const authRateLimitEnvSchema = z.object({
+  AUTH_RATE_LIMIT_WINDOW_MS: integerFromEnvSchema,
+  AUTH_RATE_LIMIT_MAX_REQUESTS: integerFromEnvSchema,
+  AUTH_LOGIN_RATE_LIMIT_WINDOW_MS: integerFromEnvSchema,
+  AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS: integerFromEnvSchema,
+  AUTH_REGISTER_RATE_LIMIT_WINDOW_MS: integerFromEnvSchema,
+  AUTH_REGISTER_RATE_LIMIT_MAX_REQUESTS: integerFromEnvSchema,
+  AUTH_FORGOT_PASSWORD_RATE_LIMIT_WINDOW_MS: integerFromEnvSchema,
+  AUTH_FORGOT_PASSWORD_RATE_LIMIT_MAX_REQUESTS: integerFromEnvSchema,
+  AUTH_RESET_PASSWORD_RATE_LIMIT_WINDOW_MS: integerFromEnvSchema,
+  AUTH_RESET_PASSWORD_RATE_LIMIT_MAX_REQUESTS: integerFromEnvSchema,
+  AUTH_ACTIVATE_RATE_LIMIT_WINDOW_MS: integerFromEnvSchema,
+  AUTH_ACTIVATE_RATE_LIMIT_MAX_REQUESTS: integerFromEnvSchema,
+  AUTH_PASSWORD_RESET_RESEND_COOLDOWN_MS: integerFromEnvSchema,
+});
+
 export const smtpEnvSchema = z.object({
   SMTP_HOST: requiredStringSchema,
   SMTP_PORT: integerFromEnvSchema,
@@ -146,6 +162,7 @@ export const apiRuntimeEnvSchema = baseRuntimeEnvSchema
   .merge(redisEnvSchema)
   .merge(storageEnvSchema)
   .merge(authEnvSchema)
+  .merge(authRateLimitEnvSchema)
   .merge(smtpEnvSchema)
   .merge(appPortsEnvSchema)
   .merge(publicUrlEnvSchema)
@@ -164,6 +181,7 @@ export type DatabaseConfig = z.infer<typeof databaseEnvSchema>;
 export type RedisConfig = z.infer<typeof redisEnvSchema>;
 export type StorageConfig = z.infer<typeof storageEnvSchema>;
 export type AuthConfig = z.infer<typeof authEnvSchema>;
+export type AuthRateLimitConfig = z.infer<typeof authRateLimitEnvSchema>;
 export type SmtpConfig = z.infer<typeof smtpEnvSchema>;
 export type ProviderOAuthConfig = z.infer<typeof providerOAuthEnvSchema>;
 export type AppPortsConfig = z.infer<typeof appPortsEnvSchema>;

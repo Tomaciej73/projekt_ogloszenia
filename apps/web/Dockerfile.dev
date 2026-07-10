@@ -6,6 +6,7 @@ RUN npm install dotenv tsx zod
 
 COPY apps/web/ apps/web/
 COPY packages/ packages/
+COPY package.json package.json
 
 EXPOSE 3000
 

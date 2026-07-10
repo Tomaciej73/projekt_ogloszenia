@@ -18,6 +18,8 @@ A fully working application is running: user registration/login with HttpOnly co
 - **Pinned package manager:** pnpm@11.10.0
 - **Workspace protocol:** `workspace:*` for inter-package dependencies
 - **Security:** All credentials from `.env` via dotenv. No hardcoded secrets in source code. PBKDF2+SHA512+16B salt for passwords. Browser auth now uses an HttpOnly same-site cookie carrying the signed JWT instead of storing the JWT in `localStorage`, and mutating requests require a same-origin CSRF token (`/auth/csrf` + `X-CSRF-Token`). New accounts are inactive until activated by email link or by the forgot-password activation flow. Accounts lock after 5 failed login attempts and are unlocked only by completing the password reset flow. Password reset requires a registered email, a one-time 6-digit code whose SHA-256 hash is stored in PostgreSQL, and a strong password (uppercase, lowercase, number, special character). Image uploads now accept only validated JPG/PNG/GIF/WebP payloads after server-side MIME sniffing and structural checks; direct presigned uploads are disabled in the active runtime.
+- **Auth abuse protection:** `/auth/*` now has configurable Redis-backed rate limits in the active API runtime, and forgot-password code re-sends are additionally throttled through the existing `passwordResetRequestedAt` timestamp stored in PostgreSQL.
+- **Runtime version source of truth:** The user-visible app version now comes from the root workspace SemVer (`package.json`) through a shared runtime helper, so API health/logs and static HTML footers stay aligned without manual string updates.
 - **Request body limits:** The active API now enforces byte limits while streaming JSON bodies into memory: standard JSON requests are capped at 1 MB, and `/media/upload` has a larger request cap sized for the existing 10 MB decoded image limit plus base64 overhead.
 - **Mail deliverability constraint:** The SMTP relay currently accepts messages, and runtime config now points to `noreply@manager.multiportal.site`, but real inbox delivery to providers like Gmail/Onet still depends on that mailbox actually existing on the relay plus aligned SPF/DKIM/DMARC.
 - **Owner's changes are authoritative:** Port numbers, configuration values, file names chosen by the project owner must not be reverted or "corrected" by AI. See `.clinerules/01-project.md`.
@@ -25,9 +27,9 @@ A fully working application is running: user registration/login with HttpOnly co
 
 ## Immediate Next Steps
 
-1. Add rate limiting and resend throttling for `/auth/*` and password reset endpoints.
-2. Add E2E coverage for activation, forgot-password, and restart persistence scenarios.
-3. Implement provider connector interface with real OLX research.
+1. Add E2E coverage for activation, forgot-password, and restart persistence scenarios.
+2. Implement the first provider connector using the researched OLX constraints and category limitations.
+3. Continue official API/commercial access research for Vinted Pro Integrations and Facebook Marketplace.
 4. Add E2E tests for the main listing and publication flows.
 
 ## Known Unknowns
@@ -39,6 +41,10 @@ A fully working application is running: user registration/login with HttpOnly co
 
 ## Recent Changes
 
+- 2026-07-10: Moved auth rate-limit counters from process memory to Redis, kept forgot-password resend cooldown in PostgreSQL, and updated the main frontend auth flows to show warning toasts with `Retry-After` timing when `429` limits are hit.
+- 2026-07-10: Centralized the user-visible app version behind the root workspace SemVer (`0.4.0`) so API health/logs and HTML footers render the same runtime version without hardcoded `v0.3.0` strings.
+- 2026-07-10: Added configurable rate limiting for `/auth/*` plus tighter login/register/activate/forgot-password/reset-password limits in the active API, and added a DB-backed resend cooldown for forgot-password emails using `passwordResetRequestedAt`.
+- 2026-07-10: Confirmed from official provider docs that OLX exposes an official adverts API behind application verification, while Vinted Pro Integrations supports item listing via API only for allowlisted Pro businesses; public API pricing details are still not disclosed in the official docs reviewed so far.
 - 2026-07-10: Strengthened the working rule that every meaningful implementation/process/version change must be explicitly documented in `memory-bank`, with SemVer notation recorded whenever versions are pinned or updated.
 - 2026-07-10: Recorded an explicit SemVer rule in the technical context, so future package/runtime/image version pins must use clear SemVer values or deliberate SemVer ranges instead of ambiguous version notation.
 - 2026-07-10: Refined the active `public/index.html` UI so the forgot-password panel stays collapsed until the user opens it, locked/inactive-login hints no longer auto-expand the reset form, listing rows have visible spacing again, and edit-modal photo thumbnails stay fixed-size instead of stretching to full width.

@@ -28,6 +28,7 @@
 - `apps/api/runtime-config.js` loads the validated API runtime config from `packages/config`
 - `apps/worker/worker.js` processes BullMQ jobs
 - `apps/worker/runtime-config.js` loads the validated worker runtime config from `packages/config`
+- `packages/config/app-version.js` reads the root workspace SemVer and serves as the runtime version source of truth for API logs/health and injected HTML footer labels
 
 Next.js and NestJS source scaffolding remains in the repository, but those entry points are not the active runtime today.
 
@@ -109,6 +110,7 @@ Key `.env` groups:
 - **Storage:** `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
 - **Web proxy:** `API_PROXY_URL`, `MINIO_PROXY_URL`
 - **Auth:** `JWT_SECRET`, `SESSION_SECRET`, `CSRF_SECRET`
+- **Auth rate limiting:** `AUTH_RATE_LIMIT_WINDOW_MS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`, `AUTH_LOGIN_RATE_LIMIT_WINDOW_MS`, `AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS`, `AUTH_REGISTER_RATE_LIMIT_WINDOW_MS`, `AUTH_REGISTER_RATE_LIMIT_MAX_REQUESTS`, `AUTH_FORGOT_PASSWORD_RATE_LIMIT_WINDOW_MS`, `AUTH_FORGOT_PASSWORD_RATE_LIMIT_MAX_REQUESTS`, `AUTH_RESET_PASSWORD_RATE_LIMIT_WINDOW_MS`, `AUTH_RESET_PASSWORD_RATE_LIMIT_MAX_REQUESTS`, `AUTH_ACTIVATE_RATE_LIMIT_WINDOW_MS`, `AUTH_ACTIVATE_RATE_LIMIT_MAX_REQUESTS`, `AUTH_PASSWORD_RESET_RESEND_COOLDOWN_MS`
 - **SMTP:** `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`
 - **SMTP transport mode:** optional `SMTP_SECURE` plus optional `SMTP_REQUIRE_TLS`
 - **Encryption:** `TOKEN_ENCRYPTION_KEY`
@@ -168,6 +170,8 @@ packages/config/
 - Passwords use PBKDF2 + SHA512 + 100k iterations + 16-byte random salts.
 - Password reset uses SMTP-delivered 6-digit codes with 1-hour expiry.
 - Reset codes are stored in PostgreSQL as SHA-256 hashes scoped to the user ID, with expiry, request timestamp, and invalid-attempt counter.
+- The active API now enforces configurable auth rate limits for `/auth/*` plus tighter per-route limits for login/register/activate/forgot-password/reset-password.
+- Password reset code re-sends are additionally throttled through `passwordResetRequestedAt`, so a fresh code cannot be requested again until the configured cooldown expires.
 - Login responses can return DB-backed `remainingLoginAttempts` and `accountLocked` flags so the frontend stays synchronized with the actual lock state.
 - Inactive accounts can also be activated through the forgot-password reset flow after mailbox verification.
 - Runtime startup now fails fast if required auth/storage/SMTP config is missing or invalid; the active API/web/worker processes no longer fall back to placeholder secrets or implicit `localhost` endpoints.
@@ -179,6 +183,8 @@ packages/config/
 - SMTP relay acceptance alone is not enough for Gmail/Onet inbox delivery; verified sender mailbox plus aligned SPF/DKIM/DMARC remain required.
 - Verbose nodemailer transport logging is disabled in runtime to avoid leaking reset codes or SMTP session details into container logs.
 - JSON request parsing in `apps/api/db-server.js` now enforces byte caps while reading the stream: 1 MB for normal JSON endpoints and a larger route-specific cap for `/media/upload` that matches the 10 MB decoded image limit plus base64 overhead.
+- Auth rate limit counters now live in Redis, while the forgot-password resend cooldown is persisted in PostgreSQL through the existing `User.passwordResetRequestedAt` field.
+- If Redis is unavailable, auth endpoints currently fail closed with a temporary `503` because rate limiting is treated as required security infrastructure.
 - Strong password rules are enforced on registration and password reset:
   - minimum 8 characters
   - at least one lowercase letter

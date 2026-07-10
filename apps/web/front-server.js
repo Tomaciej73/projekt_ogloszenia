@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { config } = require("./runtime-config");
+const { APP_VERSION } = require("../../packages/config/app-version");
 
 const API_PROXY_URL = config.API_PROXY_URL;
 const MEDIA_PROXY_URL = config.MINIO_PROXY_URL;
@@ -40,6 +41,10 @@ function injectNonceIntoHtml(html, nonce) {
   return html
     .replace(/<script(?![^>]*\bnonce=)/g, `<script nonce="${nonce}"`)
     .replace(/<style(?![^>]*\bnonce=)/g, `<style nonce="${nonce}"`);
+}
+
+function injectRuntimeValuesIntoHtml(html) {
+  return html.replaceAll("__APP_VERSION__", APP_VERSION);
 }
 
 function buildHtmlSecurityHeaders(nonce) {
@@ -166,7 +171,7 @@ const server = http.createServer((req, res) => {
 
     if (contentType === "text/html") {
       const nonce = crypto.randomBytes(16).toString("base64");
-      const html = injectNonceIntoHtml(data.toString("utf8"), nonce);
+      const html = injectNonceIntoHtml(injectRuntimeValuesIntoHtml(data.toString("utf8")), nonce);
       res.writeHead(200, {
         "Content-Type": `${contentType}; charset=utf-8`,
         ...buildHtmlSecurityHeaders(nonce),
@@ -184,5 +189,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(config.WEB_PORT, () => {
-  console.log(`Frontend running at http://localhost:${config.WEB_PORT}`);
+  console.log(`Frontend running at http://localhost:${config.WEB_PORT} (v${APP_VERSION})`);
 });

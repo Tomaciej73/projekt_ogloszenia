@@ -21,7 +21,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
-### Backend API (`apps/api/db-server.js`) v0.3.0
+### Backend API (`apps/api/db-server.js`) v0.4.0
 - [x] `POST /auth/register` - creates inactive accounts, generates activation tokens, sends activation email, and returns activation-required messaging
 - [x] `GET /auth/activate` - validates activation link, activates account, and renders an HTML confirmation page
 - [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
@@ -30,6 +30,9 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `GET /auth/csrf` - issues and refreshes the same-origin CSRF token used by mutating browser requests
 - [x] `GET /auth/me` - current user info
 - [x] `POST /auth/logout` - clears the HttpOnly auth cookie
+- [x] Configurable auth rate limiting for `/auth/*`, plus tighter per-route limits for login/register/activate/forgot-password/reset-password
+- [x] DB-backed forgot-password resend throttling via `passwordResetRequestedAt`
+- [x] Auth rate-limit counters persisted in Redis instead of API process memory
 - [x] `GET /health` - health check with DB status
 - [x] `GET/POST /listings` - list/create listing drafts (auth required)
 - [x] `GET/PUT/DELETE /listings/:id` - CRUD operations (auth required)
@@ -55,6 +58,8 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `public/register.html` - standalone registration page with strong password rules, activation-required messaging, and CSRF-protected signup
 - [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint, DB-synced remaining login-attempt messaging, and CSRF-protected login
 - [x] `front-server.js` - static file server plus same-origin API and MinIO media proxy for VPS/Nginx deployment
+- [x] User-visible version labels now render from the shared app SemVer (`0.4.0`) instead of duplicated hardcoded footer/log strings
+- [x] Main auth flows now surface rate-limit hits as warning toasts with retry timing
 - [x] `apps/web/src/` scaffold no longer hardcodes `localhost` API URLs; it now supports optional `NEXT_PUBLIC_API_BASE_URL` with same-origin fallback
 - [x] Dashboard after login with listing list and stats
 - [x] Session persistence via HttpOnly auth cookie plus non-secret user cache in localStorage (survives refresh/new tab)
@@ -67,6 +72,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Account activation via 1-hour email link with DB-backed activation token hash
 - [x] Account lockout after 5 failed login attempts, cleared only by successful password reset
 - [x] One-time 6-digit password reset codes with 1-hour expiry and DB-backed hashed persistence
+- [x] Auth abuse protection via configurable rate limiting on `/auth/*` and a DB-backed forgot-password resend cooldown
 - [x] SMTP startup verification plus delivery-result logging to separate relay acceptance from inbox-side deliverability issues
 - [x] SMTP runtime now supports both `587` STARTTLS and `465` SSL/TLS via `SMTP_SECURE`
 - [x] SMTP debug transport logging disabled to avoid leaking reset codes or mail transport details in container logs
@@ -82,11 +88,9 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 ## Pending (Next Steps)
 
 ### Phase 8 - Provider Integration and Auth Hardening
-1. Add rate limiting and resend throttling for `/auth/*` and password reset endpoints.
-2. Add automated auth coverage for activation, forgot-password, and restart persistence.
-3. Research OLX official API documentation.
-4. Implement OLX connector.
-5. Research Vinted Pro and Facebook Marketplace APIs.
+1. Add automated auth coverage for activation, forgot-password, and restart persistence.
+2. Implement OLX connector.
+3. Continue official Vinted Pro and Facebook Marketplace API/commercial access research.
 
 ### Phase 9 - Testing
 6. Add backend unit tests (Jest)
@@ -97,7 +101,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - NestJS source code exists but is not used at runtime (plain Node.js servers are active instead).
 - Current automated checks are still smoke-level only (TypeScript + runtime syntax validation); deeper unit/integration coverage is still pending.
 - 2 build scripts remain blocked (`msgpackr-extract`, `sharp`) - needed for Next.js builds, not blocking current development.
-- Auth endpoints still need rate limiting and resend throttling.
+- Auth rate limiting now depends on Redis availability; if Redis is down, protected `/auth/*` requests currently fail closed with a temporary `503` until Redis recovers.
 - Manual security review is still in progress; JWT is no longer stored in `localStorage`, but any future same-origin XSS could still act through an active browser session even though it can no longer trivially exfiltrate the JWT.
 - The upload path now blocks renamed/corrupted non-images through MIME sniffing and image-structure checks, but it does not yet run a dedicated antivirus engine such as ClamAV for full malware scanning.
 - Real inbox delivery still depends on a verified `SMTP_FROM` sender and aligned SPF/DKIM/DMARC for the chosen SMTP relay.
@@ -149,3 +153,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-10 | Workspace `dev`, `lint`, and `test` scripts now reflect the real runtime and real checks | Removes placeholder success paths and makes `pnpm test` a meaningful smoke test instead of `echo ok` |
 | 2026-07-10 | The main HTML frontend now keeps forgot-password collapsed by default and uses fixed thumbnail grids in edit modals | Prevents unexpected auth-panel expansion, restores spacing between listing cards, and stops single-photo previews from stretching across the modal |
 | 2026-07-10 | Every meaningful change must be recorded in `memory-bank`, and version changes must use explicit SemVer notation | Keeps project context durable between sessions and prevents ambiguous version history or undocumented changes |
+| 2026-07-10 | `/auth/*` now has configurable rate limiting and forgot-password now has a DB-backed resend cooldown | Reduces brute-force and mailbox-spam risk without hardcoding the thresholds into the runtime |
+| 2026-07-10 | Official research confirmed OLX adverts can be created/managed via its verified public API, while Vinted item listing API is gated to allowlisted Pro businesses | Clarifies provider feasibility before connector implementation and highlights unresolved commercial-access questions |
+| 2026-07-10 | Auth rate-limit counters now live in Redis and rate-limit responses expose retry timing to the frontend | Makes rate limits survive API restarts / multi-instance sharing and gives the UI enough data to show actionable throttle feedback |
+| 2026-07-10 | User-visible runtime version now comes from the root workspace SemVer (`0.4.0`) through a shared helper | Keeps API logs/health and static HTML footers aligned without manual version-string hunting |

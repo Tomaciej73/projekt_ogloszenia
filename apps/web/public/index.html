@@ -196,7 +196,7 @@
       <div class="detail-content" id="editContent"></div>
     </div>
   </div>
-  <footer>MultiPortal Listing Manager v0.3.0 - Development Mode</footer>
+  <footer>MultiPortal Listing Manager v__APP_VERSION__ - Development Mode</footer>
 
   <script>
     const API = '';
@@ -248,6 +248,40 @@
       t.textContent = msg;
       c.appendChild(t);
       setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; setTimeout(() => t.remove(), 300); }, 4000);
+    }
+
+    function getRetryAfterSeconds(response, data) {
+      const responseRetryAfter = Number(response?.headers?.get('Retry-After'));
+      if (Number.isFinite(data?.retryAfterSeconds) && data.retryAfterSeconds > 0) {
+        return data.retryAfterSeconds;
+      }
+      if (Number.isFinite(responseRetryAfter) && responseRetryAfter > 0) {
+        return responseRetryAfter;
+      }
+      return 0;
+    }
+
+    function formatRetryAfterSeconds(totalSeconds) {
+      const seconds = Math.max(1, Math.ceil(Number(totalSeconds) || 0));
+      if (seconds >= 3600) {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.ceil((seconds % 3600) / 60);
+        return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+      }
+      if (seconds >= 60) {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+      }
+      return `${seconds}s`;
+    }
+
+    function buildRateLimitMessage(response, data, fallbackMessage) {
+      const baseMessage = String(data?.error || fallbackMessage || 'Too many requests. Please try again later.').trim();
+      const retryAfterSeconds = getRetryAfterSeconds(response, data);
+      return retryAfterSeconds > 0
+        ? `${baseMessage} Try again in ${formatRetryAfterSeconds(retryAfterSeconds)}.`
+        : baseMessage;
     }
 
     function validatePasswordStrength(password) {
@@ -398,6 +432,12 @@
             toast(data.error || 'Account locked. Use Forgot password to unlock it.', 'warning');
             return;
           }
+          if (res.status === 429) {
+            const rateLimitMessage = buildRateLimitMessage(res, data, 'Too many login attempts. Please try again later.');
+            setLoginAttemptsHint(rateLimitMessage, 'warning');
+            toast(rateLimitMessage, 'warning');
+            return;
+          }
           throw new Error(data.error || 'Login failed');
         }
         setLoginAttemptsHint('');
@@ -425,7 +465,13 @@
           body: JSON.stringify({ name: document.getElementById('regName').value, email: document.getElementById('regEmail').value, password }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Registration failed');
+        if (!res.ok) {
+          if (res.status === 429) {
+            toast(buildRateLimitMessage(res, data, 'Too many registration attempts. Please try again later.'), 'warning');
+            return;
+          }
+          throw new Error(data.error || 'Registration failed');
+        }
         document.getElementById('loginEmail').value = data.email || document.getElementById('regEmail').value;
         document.getElementById('forgotEmail').value = data.email || document.getElementById('regEmail').value;
         document.getElementById('regName').value = '';
@@ -852,7 +898,15 @@
           body: JSON.stringify({ email: document.getElementById('forgotEmail').value }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to send reset code');
+        if (!res.ok) {
+          if (res.status === 429) {
+            const rateLimitMessage = buildRateLimitMessage(res, data, 'Too many password reset requests. Please try again later.');
+            setForgotPasswordOpen(true);
+            toast(rateLimitMessage, 'warning');
+            return;
+          }
+          throw new Error(data.error || 'Failed to send reset code');
+        }
         setForgotPasswordOpen(true);
         setResetCodeSectionOpen(true);
         toast(data.message || 'Reset code sent. Check your email.', 'success');
@@ -881,7 +935,13 @@
           body: JSON.stringify({ email: forgotEmail, code: resetCode, password }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Reset failed');
+        if (!res.ok) {
+          if (res.status === 429) {
+            toast(buildRateLimitMessage(res, data, 'Too many password reset submissions. Please try again later.'), 'warning');
+            return;
+          }
+          throw new Error(data.error || 'Reset failed');
+        }
         toast(data.message, 'success');
         document.getElementById('loginEmail').value = forgotEmail;
         document.getElementById('loginPassword').value = '';

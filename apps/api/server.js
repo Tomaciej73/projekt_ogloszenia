@@ -1,4 +1,5 @@
 const http = require("http");
+const { APP_VERSION } = require("../../packages/config/app-version");
 
 const server = http.createServer((req, res) => {
   res.setHeader("Content-Type", "application/json");
@@ -20,7 +21,7 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({
       status: "ok",
       service: "MultiPortal Listing Manager API",
-      version: "0.0.0",
+      version: APP_VERSION,
       endpoints: {
         "GET /listings": "List all listing drafts",
         "POST /listings": "Create a listing draft",
@@ -103,7 +104,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(3001, () => {
-  console.log("MultiPortal API running at http://localhost:3001");
+  console.log(`MultiPortal API running at http://localhost:3001 (v${APP_VERSION})`);
   console.log("Endpoints available:");
   console.log("  GET  /health");
   console.log("  GET  /listings");
