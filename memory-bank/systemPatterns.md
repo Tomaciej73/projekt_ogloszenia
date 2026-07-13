@@ -207,11 +207,18 @@ apps/api/src/
 - `POST /auth/forgot-password` also enforces a database-backed resend cooldown via `passwordResetRequestedAt`, so recently sent reset codes cannot be re-requested immediately even after an API restart.
 - Rate-limit `429` responses include `Retry-After`, `X-RateLimit-*`, and `retryAfterSeconds`, allowing the active frontend to show user-facing throttle warnings with real wait times.
 
-### 17. Hardened Runtime Image Pattern
+### 17. Session-Backed JWT Pattern
+- A signed JWT contains a user ID, an opaque database-backed session ID, and the user's session version. A cookie is not accepted solely because its JWT signature is valid.
+- Every protected request verifies that the user exists, the session version matches, and the `AuthSession` row is active and unexpired. `lastSeenAt` is updated at most once every five minutes to limit write load.
+- `GET /auth/sessions` exposes only the current user's active session metadata, and `DELETE /auth/sessions/:id` ends an individual session. `DELETE /auth/sessions` ends every other active session.
+- Password reset increments `User.sessionVersion` and revokes all `AuthSession` rows in the same transaction, invalidating every pre-reset JWT.
+
+### 18. Hardened Runtime Image Pattern
 - Runtime Docker images install from the checked-in pnpm lockfile using workspace package manifests only, keeping dependency resolution deterministic without copying secrets such as `.env` into the build context.
 - `.dockerignore` excludes `.env`, temporary local artifacts, `node_modules`, git metadata, security artifacts, AI workflow files, and package build output from Docker build context transfer.
 - Multi-stage Docker builds compile shared config packages once, then use `pnpm deploy --prod --legacy --ignore-scripts` to copy only the runtime app payload plus pruned production dependencies into the final image.
 - Active JS runtimes now load validated config from compiled `@multiportal/config/dist/config.js`, so the final images do not need the runtime `tsx` dependency or the full monorepo source layout.
 - The API image runs Prisma client generation during the image build and `prisma migrate deploy` during container startup using explicit Prisma config paths, avoiding working-directory ambiguity in both the builder and the pruned runtime image.
+- The API builder normalizes the entrypoint script to LF before it is executed by Alpine `/bin/sh`, so a Windows checkout cannot break migration startup through CRLF line endings.
 - App runtime images switch to the non-root `node` user and declare Docker healthchecks through `apps/api/healthcheck.js`, `apps/web/healthcheck.js`, and `apps/worker/healthcheck.js`.
 - This pattern cut the final image sizes on 2026-07-10 from roughly `2.6 GB` each down to about `751 MB` (API), `731 MB` (web), and `276 MB` (worker); after that change the main remaining disk-pressure source is stale BuildKit cache rather than live runtime volumes.

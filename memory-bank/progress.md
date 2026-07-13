@@ -14,6 +14,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] API container startup now runs `prisma migrate deploy` before serving requests, so Docker/VPS upgrades apply pending schema changes automatically
 - [x] Active API/web/worker runtimes now load per-runtime validated config from `packages/config` via bridge files, instead of reading `process.env` with dangerous secret or `localhost` fallbacks
 - [x] App runtime images now use an explicit `.dockerignore`, multi-stage `pnpm deploy` runtime packaging, explicit Prisma config paths, non-root `node` users, and Docker healthchecks
+- [x] API image build normalizes the shell entrypoint to LF, preventing CRLF from breaking Alpine migration startup
 - [x] Prisma v7 schema with 12 entities and 4 enums
 - [x] 5 Prisma migrations applied
 - [x] `.env` - all configuration via dotenv, no hardcoded credentials
@@ -22,15 +23,16 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
-### Backend API (`apps/api/db-server.js`) v0.4.3
+### Backend API (`apps/api/db-server.js`) v0.4.4
 - [x] `POST /auth/register` - creates inactive accounts, generates activation tokens, sends activation email, and returns activation-required messaging
 - [x] `GET /auth/activate` - validates activation link, activates account, and renders an HTML confirmation page
 - [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
 - [x] `POST /auth/forgot-password` - validates email/account existence, generates a 6-digit reset code, stores only its DB-backed hash plus expiry metadata, sends it via SMTP, and doubles as the recovery activation path for inactive accounts
-- [x] `POST /auth/reset-password` - validates email, DB-backed reset code hash, strong password rules, changes password, clears reset state, unlocks locked accounts, and activates inactive accounts
+- [x] `POST /auth/reset-password` - validates email, DB-backed reset code hash, unique passphrase, and breach status; changes password, clears reset state, unlocks/activates the account, and revokes all prior sessions atomically
 - [x] `GET /auth/csrf` - issues and refreshes the same-origin CSRF token used by mutating browser requests
 - [x] `GET /auth/me` - current user info
-- [x] `POST /auth/logout` - clears the HttpOnly auth cookie
+- [x] `GET/DELETE /auth/sessions` and `DELETE /auth/sessions/:id` - list active sessions and end every other or a selected session
+- [x] `POST /auth/logout` - revokes the current database session and clears the HttpOnly auth cookie
 - [x] Configurable auth rate limiting for `/auth/*`, plus tighter per-route limits for login/register/activate/forgot-password/reset-password
 - [x] DB-backed forgot-password resend throttling via `passwordResetRequestedAt`
 - [x] Auth rate-limit counters persisted in Redis instead of API process memory
@@ -42,7 +44,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `GET /providers` - list marketplace providers
 - [x] `GET/POST /marketplace-accounts` - connect provider accounts
 - [x] `POST /media/upload-url` - intentionally disabled in the active runtime because direct presigned uploads bypass server-side file validation
-- [x] Email validation (regex), strong password validation (min 8, uppercase, lowercase, number, special character), reset code validation, and input sanitization
+- [x] Email validation (regex), 15–256 character passphrase validation, HIBP k-anonymity breach checks, reset code validation, and input sanitization
 - [x] JSON request bodies are now capped in-memory, with a 1 MB default limit and a dedicated higher cap for `/media/upload`
 - [x] Pretty JSON responses (2-space indent)
 - [x] Marketplace-account browser responses use an explicit safe DTO that excludes provider user identifiers, access tokens, refresh tokens, and token-expiry metadata; mock account linking is development-only until official OAuth is implemented
@@ -55,10 +57,10 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] 3 retry attempts with exponential backoff (2s, 4s, 8s)
 
 ### Frontend (`apps/web/`)
-- [x] `public/index.html` - landing page with Login/Register tabs, activation-aware registration/login messaging, DB-synced remaining login-attempt messaging, same-origin API calls, CSRF-aware mutations, forgot-password flow, reset code entry, stronger password guidance, and stabilized dashboard/modal thumbnail layout
+- [x] `public/index.html` - landing page with Login/Register tabs, activation-aware registration/login messaging, DB-synced remaining login-attempt messaging, same-origin API calls, CSRF-aware mutations, passphrase guidance, and an active-session management panel
 - [x] `public/create-listing.html` - listing creation form with client-side invalid/corrupted image rejection before upload
 - [x] `public/dashboard.html` - publication dashboard: list listings, select provider, publish, and send CSRF-protected mutating requests
-- [x] `public/register.html` - standalone registration page with strong password rules, activation-required messaging, and CSRF-protected signup
+- [x] `public/register.html` - standalone registration page with passphrase guidance, activation-required messaging, and CSRF-protected signup
 - [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint, DB-synced remaining login-attempt messaging, and CSRF-protected login
 - [x] `front-server.js` - static file server plus same-origin API proxy, including media requests that the API authorizes before MinIO access
 - [x] User-visible version labels now render from the shared package SemVer (`0.4.1`) instead of duplicated hardcoded footer/log strings
@@ -69,14 +71,16 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 
 ### Security
 - [x] All credentials only from `.env` via dotenv
-- [x] PBKDF2 + SHA512 + 100k iterations + 16B random salt
-- [x] Browser authentication via HttpOnly same-site JWT cookie
+- [x] Versioned PBKDF2-HMAC-SHA512 with 220k iterations, 16B random salt, and automatic rehash of legacy 100k hashes after successful login
+- [x] HIBP Pwned Passwords k-anonymity breach check for new passphrases; only SHA-1 range prefixes leave the application
+- [x] Browser authentication via HttpOnly same-site JWT cookie backed by a revocable `AuthSession` row
 - [x] Same-origin CSRF protection for browser mutations via `mp_csrf` cookie plus `X-CSRF-Token`
 - [x] Account activation via 1-hour email link with DB-backed activation token hash
 - [x] Account lockout after 5 failed login attempts, cleared only by successful password reset
 - [x] One-time 6-digit password reset codes with 1-hour expiry and DB-backed hashed persistence
 - [x] Auth abuse protection via configurable rate limiting on `/auth/*` and a DB-backed forgot-password resend cooldown
 - [x] Protected API routes now verify that the authenticated user still exists in PostgreSQL, so stale cookies after a DB reset are cleared with `401` instead of crashing `/auth/me`
+- [x] Active session list with single/all-other session revocation; password reset invalidates all sessions through `sessionVersion` and DB revocation
 - [x] SMTP startup verification plus delivery-result logging to separate relay acceptance from inbox-side deliverability issues
 - [x] SMTP runtime now supports both `587` STARTTLS and `465` SSL/TLS via `SMTP_SECURE`
 - [x] SMTP debug transport logging disabled to avoid leaking reset codes or mail transport details in container logs

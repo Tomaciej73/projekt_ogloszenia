@@ -64,6 +64,7 @@ model User {
   passwordResetCodeExpiresAt DateTime?
   passwordResetRequestedAt   DateTime?
   passwordResetAttempts      Int      @default(0)
+  sessionVersion             Int      @default(0)
   name                       String?
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
@@ -72,6 +73,21 @@ model User {
   marketplaceAccounts MarketplaceAccount[]
   listingDrafts     ListingDraft[]
   auditLogs         AuditLog[]
+  authSessions      AuthSession[]
+}
+
+model AuthSession {
+  id        String    @id
+  createdAt DateTime  @default(now())
+  lastSeenAt DateTime @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+  userAgent String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, expiresAt])
 }
 
 model Workspace {

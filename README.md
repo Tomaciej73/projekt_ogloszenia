@@ -176,6 +176,14 @@ The production override forces `NODE_ENV=production`, removes every host mapping
 
 Do not forward MinIO or its console through the reverse proxy. The application bucket is private: listing media is read through the same-origin `/media-files/...` API route after session and listing-owner authorization. This is intentional; an opaque object key is not an access-control mechanism.
 
+### Passwords and sessions
+
+New passwords must be unique passphrases with at least 15 characters. They are stored as versioned PBKDF2-HMAC-SHA512 hashes with 220,000 iterations and a random 16-byte salt. Existing legacy 100,000-iteration hashes are upgraded automatically after the next successful login.
+
+The application checks new passwords through the HIBP Pwned Passwords k-anonymity range API. It sends only the first five characters of a locally calculated SHA-1 hash, never the password or its full hash. The check is enabled and fail-closed by default; use the documented `PASSWORD_BREACH_CHECK_*` environment variables only when an operational exception is necessary.
+
+Each login receives a database-backed session ID embedded in the HttpOnly JWT cookie. The account panel shows active sessions and can end one or all other sessions. A password reset revokes every previous session before the user can log in again.
+
 ### 5. Install Dependencies
 
 ```powershell

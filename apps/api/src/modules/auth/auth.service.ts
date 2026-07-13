@@ -1,15 +1,19 @@
-import { Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable } from "@nestjs/common";
+import { randomBytes } from "crypto";
+import { loadApiConfig } from "@multiportal/config";
 import { PrismaService } from "../../prisma/prisma.service";
+
+const config = loadApiConfig();
 
 @Injectable()
 export class AuthService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Placeholder authentication.
-   * Will be replaced with proper JWT/OAuth implementation.
-   */
   async getOrCreateDevUser() {
+    if (config.NODE_ENV !== "development") {
+      throw new ForbiddenException("Development user provisioning is disabled outside development.");
+    }
+
     let user = await this.prisma.user.findUnique({
       where: { email: "dev@multiportal.local" },
     });
@@ -18,7 +22,7 @@ export class AuthService {
       user = await this.prisma.user.create({
         data: {
           email: "dev@multiportal.local",
-          passwordHash: "dev-password-hash",
+          passwordHash: randomBytes(64).toString("hex"),
           name: "Developer",
         },
       });
@@ -63,7 +67,7 @@ export class AuthService {
             userId: user.id,
             marketplaceProviderId: olxProvider.id,
             providerUserId: "dev-olx-user",
-            accessToken: "mock-encrypted-token",
+            accessToken: randomBytes(32).toString("hex"),
           },
         });
       }

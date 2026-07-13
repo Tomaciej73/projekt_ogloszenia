@@ -32,8 +32,8 @@
       <label>Email</label>
       <input type="email" id="email" required placeholder="you@example.com" autocomplete="email">
       <label>Password</label>
-      <input type="password" id="password" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,128}" title="Use at least 8 characters with uppercase, lowercase, number, and special character." placeholder="Min. 8 characters, uppercase, lowercase, number, special character" autocomplete="new-password">
-      <p style="color:#666;margin:-0.5rem 0 1rem;font-size:0.85rem">Use at least 8 characters with uppercase, lowercase, number, and special character.</p>
+      <input type="password" id="password" required minlength="15" maxlength="256" title="Use a unique passphrase with at least 15 characters." placeholder="Unique passphrase (min 15 chars)" autocomplete="new-password">
+      <p style="color:#666;margin:-0.5rem 0 1rem;font-size:0.85rem">Use a unique passphrase of at least 15 characters. Known breached passwords are blocked.</p>
       <p style="color:#666;margin:-0.5rem 0 1rem;font-size:0.85rem">After registration, activate your account using the email link we send you.</p>
       <button type="submit" id="submitBtn">Create Account</button>
     </form>
@@ -69,11 +69,9 @@
     })();
 
     function validatePasswordStrength(password) {
-      if (!password || password.length < 8) return 'Password must be at least 8 characters.';
-      if (!/[a-z]/.test(password)) return 'Password must contain at least one lowercase letter.';
-      if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter.';
-      if (!/[0-9]/.test(password)) return 'Password must contain at least one number.';
-      if (!/[^A-Za-z0-9]/.test(password)) return 'Password must contain at least one special character.';
+      if (!password || password.length < 15) return 'Password must be at least 15 characters.';
+      if (password.length > 256) return 'Password is too long (max 256 characters).';
+      if (password.includes('\u0000')) return 'Password contains an unsupported character.';
       return null;
     }
 

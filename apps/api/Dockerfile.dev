@@ -25,6 +25,7 @@ RUN pnpm --filter @multiportal/config run build \
   && pnpm --filter @multiportal/api deploy --prod --legacy --ignore-scripts /prod/app \
   && pnpm --dir /prod/app --config.minimumReleaseAge=0 rebuild prisma @prisma/engines esbuild \
   && /prod/app/node_modules/.bin/prisma generate --config /prod/app/prisma.config.ts --schema /prod/app/prisma/schema.prisma \
+  && sed -i 's/\r$//' /prod/app/docker-entrypoint.sh \
   && chmod +x /prod/app/docker-entrypoint.sh
 
 FROM node:24.18.0-alpine

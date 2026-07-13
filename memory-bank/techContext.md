@@ -47,7 +47,7 @@ All dependency versions must follow the project policy defined in `.clinerules/0
 
 ## Application Version
 
-- `0.4.3` (2026-07-13) - PATCH security release. Production Compose removes public infrastructure/API ports, MinIO storage is private, and media delivery requires authenticated listing-owner authorization through the API.
+- `0.4.4` (2026-07-13) - PATCH security release. Passwords use PBKDF2-HMAC-SHA512 with 220,000 iterations plus rehash-on-login, known breached passphrases are blocked through HIBP k-anonymity, and JWTs are backed by revocable database sessions.
 
 ## Verified Versions
 
@@ -127,6 +127,7 @@ Key `.env` groups:
 - **Storage:** `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
 - **Web proxy:** `API_PROXY_URL`
 - **Auth:** `JWT_SECRET`, `SESSION_SECRET`, `CSRF_SECRET`
+- **Password breach checks:** `PASSWORD_BREACH_CHECK_ENABLED`, `PASSWORD_BREACH_CHECK_FAIL_CLOSED`, `PASSWORD_BREACH_CHECK_URL`, `PASSWORD_BREACH_CHECK_TIMEOUT_MS`
 - **Auth rate limiting:** `AUTH_RATE_LIMIT_WINDOW_MS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`, `AUTH_LOGIN_RATE_LIMIT_WINDOW_MS`, `AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS`, `AUTH_REGISTER_RATE_LIMIT_WINDOW_MS`, `AUTH_REGISTER_RATE_LIMIT_MAX_REQUESTS`, `AUTH_FORGOT_PASSWORD_RATE_LIMIT_WINDOW_MS`, `AUTH_FORGOT_PASSWORD_RATE_LIMIT_MAX_REQUESTS`, `AUTH_RESET_PASSWORD_RATE_LIMIT_WINDOW_MS`, `AUTH_RESET_PASSWORD_RATE_LIMIT_MAX_REQUESTS`, `AUTH_ACTIVATE_RATE_LIMIT_WINDOW_MS`, `AUTH_ACTIVATE_RATE_LIMIT_MAX_REQUESTS`, `AUTH_PASSWORD_RESET_RESEND_COOLDOWN_MS`
 - **SMTP:** `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`
 - **SMTP transport mode:** optional `SMTP_SECURE`, optional `SMTP_REQUIRE_TLS`, and optional temporary-debug-only `SMTP_TLS_ALLOW_INVALID_CERTS`
@@ -169,7 +170,8 @@ packages/config/
 - IDs use UUIDs
 - Timestamps use `@default(now())` and `@updatedAt`
 - Token fields use `TEXT`-compatible storage, not `varchar(255)`
-- `User` now includes activation, login lockout, and password reset state fields: `isActive`, `activatedAt`, `failedLoginAttempts`, `lockedAt`, `activationTokenHash`, `activationTokenExpiresAt`, `passwordResetCodeHash`, `passwordResetCodeExpiresAt`, `passwordResetRequestedAt`, and `passwordResetAttempts`
+- `User` now includes activation, login lockout, password reset, and session invalidation state fields: `isActive`, `activatedAt`, `failedLoginAttempts`, `lockedAt`, `activationTokenHash`, `activationTokenExpiresAt`, `passwordResetCodeHash`, `passwordResetCodeExpiresAt`, `passwordResetRequestedAt`, `passwordResetAttempts`, and `sessionVersion`
+- `AuthSession` stores opaque per-login IDs, timestamps, expiry, revocation, and a bounded user-agent label; it does not store passwords or raw session tokens.
 
 ## Queue System
 
@@ -185,11 +187,15 @@ packages/config/
 - Registration creates inactive accounts until email activation is completed.
 - Accounts lock after 5 failed login attempts and stay locked until the password reset flow completes successfully.
 - Account activation links use DB-backed token hashes with 1-hour expiry.
-- Passwords use PBKDF2 + SHA512 + 100k iterations + 16-byte random salts.
+- Passwords use versioned PBKDF2-HMAC-SHA512 with 220,000 iterations and a 16-byte random salt. Legacy 100,000-iteration hashes are accepted only long enough to be upgraded after a successful login.
+- New passwords must be unique passphrases of 15–256 characters; composition rules were removed to allow memorable passphrases without reducing the minimum length.
+- New passwords are checked with the HIBP Pwned Passwords k-anonymity range API. Only the first five characters of a locally calculated SHA-1 hash are sent; a failed check is rejected by default through `PASSWORD_BREACH_CHECK_FAIL_CLOSED=true`.
 - Password reset uses SMTP-delivered 6-digit codes with 1-hour expiry.
 - Reset codes are stored in PostgreSQL as SHA-256 hashes scoped to the user ID, with expiry, request timestamp, and invalid-attempt counter.
 - The active API now enforces configurable auth rate limits for `/auth/*` plus tighter per-route limits for login/register/activate/forgot-password/reset-password.
 - Password reset code re-sends are additionally throttled through `passwordResetRequestedAt`, so a fresh code cannot be requested again until the configured cooldown expires.
+- Every login creates an `AuthSession` and JWTs include both its opaque session ID and `User.sessionVersion`. Protected requests verify the active database session, and users can list/end individual or all other sessions through `/auth/sessions`.
+- Password reset increments `sessionVersion` and revokes all `AuthSession` rows in one transaction, invalidating every old JWT before the next request.
 - Login responses can return DB-backed `remainingLoginAttempts` and `accountLocked` flags so the frontend stays synchronized with the actual lock state.
 - Inactive accounts can also be activated through the forgot-password reset flow after mailbox verification.
 - Runtime startup now fails fast if required auth/storage/SMTP config is missing or invalid; the active API/web/worker processes no longer fall back to placeholder secrets or implicit `localhost` endpoints.
@@ -208,12 +214,8 @@ packages/config/
 - Auth rate limit counters now live in Redis, while the forgot-password resend cooldown is persisted in PostgreSQL through the existing `User.passwordResetRequestedAt` field.
 - If Redis is unavailable, auth endpoints currently fail closed with a temporary `503` because rate limiting is treated as required security infrastructure.
 - Runtime images are produced through multi-stage `pnpm deploy` packaging, remove the runtime `tsx` dependency, and the current dependency set passes `pnpm audit --json` with zero known npm advisories as of 2026-07-10.
-- Strong password rules are enforced on registration and password reset:
-  - minimum 8 characters
-  - at least one lowercase letter
-  - at least one uppercase letter
-  - at least one number
-  - at least one special character
+- The API Docker builder normalizes `docker-entrypoint.sh` to LF before invoking Alpine `/bin/sh`, preventing Windows CRLF checkouts from blocking `prisma migrate deploy`.
+- MFA/passkeys are not implemented yet. They require a separate WebAuthn credential model, registration/verification ceremony, recovery procedure, and product decision on mandatory versus optional enrolment.
 - Never log passwords, reset codes, tokens, cookies, authorization headers, API keys, or encryption keys.
 
 ## Testing Strategy

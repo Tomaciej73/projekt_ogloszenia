@@ -62,6 +62,10 @@
     .reset-code-section { display: none; margin-top: 1rem; }
     .reset-code-section.active { display: block; }
     .password-rules { font-size: 0.75rem; color: rgba(255,255,255,0.5); margin: -0.5rem 0 1rem; line-height: 1.5; }
+    .session-list { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.75rem; }
+    .session-row { padding: 0.75rem; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; background: rgba(255,255,255,0.03); }
+    .session-row p { margin: 0; font-size: 0.78rem; color: rgba(255,255,255,0.58); overflow-wrap: anywhere; }
+    .session-row button { width: auto; margin-top: 0.6rem; padding: 7px 11px; font-size: 0.78rem; }
     .feature-list { padding-left: 1.25rem; line-height: 1.9; color: rgba(255,255,255,0.75); display: grid; gap: 0.35rem; }
     .detail-actions, .modal-actions { margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .detail-actions button, .modal-actions button { width: auto; flex: 1 1 180px; }
@@ -124,8 +128,8 @@
                 <label>Reset Code (from your email)</label>
                 <input type="text" id="resetCode" required inputmode="numeric" maxlength="6" pattern="[0-9]{6}" title="Enter the 6-digit code from your email." placeholder="Enter the 6-digit reset code">
                 <label>New Password</label>
-                <input type="password" id="resetPassword" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,128}" title="Use at least 8 characters with uppercase, lowercase, number, and special character." placeholder="New password (min 8 chars)" autocomplete="new-password">
-                <p class="password-rules">Use at least 8 characters with uppercase, lowercase, number, and special character.</p>
+                <input type="password" id="resetPassword" required minlength="15" maxlength="256" title="Use a unique passphrase with at least 15 characters." placeholder="New unique passphrase (min 15 chars)" autocomplete="new-password">
+                <p class="password-rules">Use a unique passphrase of at least 15 characters. Known breached passwords are blocked.</p>
                 <button type="button" id="resetPwdBtn">Reset Password</button>
               </div>
             </div>
@@ -137,8 +141,8 @@
               <label>Email</label>
               <input type="email" id="regEmail" required placeholder="you@example.com" autocomplete="email">
               <label>Password</label>
-              <input type="password" id="regPassword" required minlength="8" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,128}" title="Use at least 8 characters with uppercase, lowercase, number, and special character." placeholder="Min. 8 characters, uppercase, lowercase, number, special character" autocomplete="new-password">
-              <p class="password-rules">Use at least 8 characters with uppercase, lowercase, number, and special character.</p>
+              <input type="password" id="regPassword" required minlength="15" maxlength="256" title="Use a unique passphrase with at least 15 characters." placeholder="Unique passphrase (min 15 chars)" autocomplete="new-password">
+              <p class="password-rules">Use a unique passphrase of at least 15 characters. Known breached passwords are blocked.</p>
               <p class="forgot-password-intro" style="margin-top:-0.35rem">After registration, activate your account using the email link we send you.</p>
               <button type="submit" id="regBtn">Create Account</button>
             </form>
@@ -165,7 +169,13 @@
           <h2>&#128100; Account</h2>
           <div style="display:flex;flex-direction:column;gap:0.6rem">
             <p><strong id="userName">-</strong></p>
-            <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;margin-bottom:2.5rem" id="userEmail">-</p>
+            <p style="color:rgba(255,255,255,0.5);font-size:0.9rem" id="userEmail">-</p>
+          </div>
+          <div style="margin-top:1.5rem">
+            <h3 style="font-size:1rem;color:#f9a8d4">Active sessions</h3>
+            <p id="sessionsSummary" style="color:rgba(255,255,255,0.52);font-size:0.78rem;margin-top:0.4rem">Loading sessions…</p>
+            <div id="sessionsList" class="session-list"></div>
+            <button class="secondary" style="margin-top:0.8rem" id="endOtherSessionsBtn">End Other Sessions</button>
           </div>
           <button class="secondary" style="margin-top:1rem" id="logoutBtn">&#128682; Log Out</button>
         </div>
@@ -200,7 +210,7 @@
 
   <script>
     const API = '';
-    const PASSWORD_RULES = 'Use at least 8 characters with uppercase, lowercase, number, and special character.';
+    const PASSWORD_RULES = 'Use a unique passphrase with at least 15 characters. Known breached passwords are blocked.';
     const PHOTO_FALLBACK_DATA_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ctext y='20' x='8' font-size='12'%3E%F0%9F%96%BC%3C/text%3E%3C/svg%3E";
     const COOKIE_SESSION_MARKER = 'cookie-session';
     const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
@@ -285,11 +295,9 @@
     }
 
     function validatePasswordStrength(password) {
-      if (!password || password.length < 8) return 'Password must be at least 8 characters.';
-      if (!/[a-z]/.test(password)) return 'Password must contain at least one lowercase letter.';
-      if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter.';
-      if (!/[0-9]/.test(password)) return 'Password must contain at least one number.';
-      if (!/[^A-Za-z0-9]/.test(password)) return 'Password must contain at least one special character.';
+      if (!password || password.length < 15) return 'Password must be at least 15 characters.';
+      if (password.length > 256) return 'Password is too long (max 256 characters).';
+      if (password.includes('\u0000')) return 'Password contains an unsupported character.';
       return null;
     }
 
@@ -385,6 +393,7 @@
       document.getElementById('forgotBtn')?.addEventListener('click', handleForgotPassword);
       document.getElementById('resetPwdBtn')?.addEventListener('click', handleResetPassword);
       document.getElementById('logoutBtn')?.addEventListener('click', handleLogout);
+      document.getElementById('endOtherSessionsBtn')?.addEventListener('click', endOtherSessions);
       document.getElementById('newListingBtn')?.addEventListener('click', () => { window.location.href = '/create-listing'; });
       document.getElementById('refreshListingsBtn')?.addEventListener('click', () => loadListings());
 
@@ -489,20 +498,96 @@
       } catch {
         // Best-effort cookie cleanup; local state is still cleared below.
       }
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      document.getElementById('loggedOutView').style.display = 'block';
-      document.getElementById('loggedInView').classList.remove('active');
+      showLoggedOut();
       toast('Logged out successfully.', 'warning');
     }
 
     // ── DASHBOARD ──
+    function showLoggedOut() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      document.getElementById('loggedOutView').style.display = 'block';
+      document.getElementById('loggedInView').classList.remove('active');
+    }
+
     function showDashboard(user) {
       document.getElementById('loggedOutView').style.display = 'none';
       document.getElementById('loggedInView').classList.add('active');
       document.getElementById('userName').textContent = user.name;
       document.getElementById('userEmail').textContent = user.email;
       loadListings();
+      loadSessions();
+    }
+
+    function formatSessionDate(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? 'Unknown time' : date.toLocaleString();
+    }
+
+    async function loadSessions() {
+      const summary = document.getElementById('sessionsSummary');
+      const list = document.getElementById('sessionsList');
+      if (!summary || !list) return;
+
+      try {
+        const res = await apiFetch('/auth/sessions', {}, { auth: true });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to load active sessions.');
+
+        const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+        summary.textContent = `${sessions.length} active ${sessions.length === 1 ? 'session' : 'sessions'}.`;
+        list.replaceChildren();
+        for (const session of sessions) {
+          const row = document.createElement('div');
+          row.className = 'session-row';
+          const title = document.createElement('strong');
+          title.textContent = session.current ? 'This device' : 'Other device';
+          const details = document.createElement('p');
+          details.textContent = session.userAgent || 'Unknown browser or device';
+          const activity = document.createElement('p');
+          activity.textContent = `Last active: ${formatSessionDate(session.lastSeenAt)}`;
+          row.append(title, details, activity);
+
+          const endButton = document.createElement('button');
+          endButton.className = 'danger';
+          endButton.textContent = session.current ? 'End This Session' : 'End Session';
+          endButton.addEventListener('click', () => endSession(session.id, session.current));
+          row.append(endButton);
+          list.append(row);
+        }
+      } catch (error) {
+        summary.textContent = error.message || 'Failed to load active sessions.';
+        list.replaceChildren();
+      }
+    }
+
+    async function endSession(sessionId, isCurrentSession) {
+      try {
+        const res = await apiFetch('/auth/sessions/' + encodeURIComponent(sessionId), { method: 'DELETE' }, { auth: true });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to end session.');
+        if (isCurrentSession) {
+          showLoggedOut();
+          toast('This session has been ended.', 'warning');
+          return;
+        }
+        toast(data.message || 'Session ended.', 'success');
+        loadSessions();
+      } catch (error) {
+        toast(error.message || 'Failed to end session.', 'error');
+      }
+    }
+
+    async function endOtherSessions() {
+      try {
+        const res = await apiFetch('/auth/sessions', { method: 'DELETE' }, { auth: true });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to end other sessions.');
+        toast(data.message || 'Other sessions ended.', 'success');
+        loadSessions();
+      } catch (error) {
+        toast(error.message || 'Failed to end other sessions.', 'error');
+      }
     }
 
     function getSafePhotoUrl(url) {

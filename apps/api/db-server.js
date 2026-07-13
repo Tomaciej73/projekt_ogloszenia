@@ -13,6 +13,12 @@ const {
 const { config } = require("./runtime-config");
 const { ensureBucket, minioClient, BUCKET } = require("./minio");
 const { MEDIA_PROXY_PREFIX, buildMediaProxyPath, extractMediaObjectKey } = require("./media-access");
+const {
+  checkPasswordBreach,
+  hashPassword,
+  validatePasswordFormat,
+  verifyPassword,
+} = require("./password-security");
 const { sendPasswordResetEmail, sendAccountActivationEmail, formatMailDeliveryResult } = require("./mail");
 const { APP_VERSION } = require("@multiportal/config/app-version");
 
@@ -38,6 +44,9 @@ const AUTH_COOKIE_NAME = "mp_auth";
 const CSRF_COOKIE_NAME = "mp_csrf";
 const CSRF_HEADER_NAME = "x-csrf-token";
 const AUTH_COOKIE_MAX_AGE_SECONDS = 24 * 60 * 60;
+const AUTH_SESSION_LAST_SEEN_UPDATE_MS = 5 * 60 * 1000;
+const AUTH_SESSION_USER_AGENT_MAX_LENGTH = 256;
+const PASSWORD_BREACH_CHECK_USER_AGENT = "MultiPortal-Listing-Manager-password-check";
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const DEFAULT_JSON_BODY_LIMIT_BYTES = 1 * MEGABYTE;
 const MAX_UPLOAD_BASE64_BODY_BYTES = Math.ceil(MAX_UPLOAD_FILE_SIZE_BYTES / 3) * 4;
@@ -248,7 +257,6 @@ async function parseJsonBodyOrRespond(req, res, options = {}) {
 // ── Validation ──
 const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 const SAFE_STRING_RE = /^[\p{L}\p{N}\p{Z}\p{P}]+$/u; // letters, numbers, spaces, punctuation
-const PASSWORD_MIN = 8;
 const RESET_CODE_RE = /^[0-9]{6}$/;
 const NAME_MAX = 100;
 const TITLE_MAX = 500;
@@ -262,14 +270,29 @@ function validateEmail(email) {
   return null;
 }
 
-function validatePassword(password) {
-  if (!password || typeof password !== "string") return "Password is required.";
-  if (password.length < PASSWORD_MIN) return `Password must be at least ${PASSWORD_MIN} characters.`;
-  if (password.length > 128) return "Password is too long (max 128 characters).";
-  if (!/[a-z]/.test(password)) return "Password must contain at least one lowercase letter.";
-  if (!/[A-Z]/.test(password)) return "Password must contain at least one uppercase letter.";
-  if (!/[0-9]/.test(password)) return "Password must contain at least one number.";
-  if (!/[^a-zA-Z0-9]/.test(password)) return "Password must contain at least one special character (e.g. !@#$%^&*).";
+async function validateNewPassword(password) {
+  const formatError = validatePasswordFormat(password);
+  if (formatError) return formatError;
+
+  const breachCheck = await checkPasswordBreach(password, {
+    enabled: config.PASSWORD_BREACH_CHECK_ENABLED,
+    rangeUrl: config.PASSWORD_BREACH_CHECK_URL,
+    timeoutMs: config.PASSWORD_BREACH_CHECK_TIMEOUT_MS,
+    userAgent: PASSWORD_BREACH_CHECK_USER_AGENT,
+    fetchImpl: globalThis.fetch,
+  });
+
+  if (breachCheck.status === "breached") {
+    return "This password has appeared in known breaches. Choose a different, unique passphrase.";
+  }
+
+  if (breachCheck.status === "unavailable") {
+    console.warn("Password breach check is temporarily unavailable.");
+    if (config.PASSWORD_BREACH_CHECK_FAIL_CLOSED) {
+      return "Password breach verification is temporarily unavailable. Please try again later.";
+    }
+  }
+
   return null;
 }
 
@@ -301,20 +324,6 @@ function sanitize(str, maxLen) {
 }
 
 // ── Password Hashing ──
-function hashPassword(pw) {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.pbkdf2Sync(pw, salt, 100000, 64, "sha512").toString("hex");
-  return `${salt}:${hash}`;
-}
-
-function verifyPassword(pw, stored) {
-  if (!stored || !stored.includes(":")) return false;
-  const parts = stored.split(":");
-  if (parts.length !== 2) return false;
-  const [salt, hash] = parts;
-  return hash === crypto.pbkdf2Sync(pw, salt, 100000, 64, "sha512").toString("hex");
-}
-
 function hashResetCode(userId, code) {
   return crypto.createHash("sha256").update(`${userId}:${code}`).digest("hex");
 }
@@ -673,13 +682,25 @@ function renderAuthStatusPage({ title, heading, message, actionHref, actionLabel
 </html>`;
 }
 
-function signToken(userId) {
-  return jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+function signToken(userId, sessionId, sessionVersion) {
+  return jwt.sign({ sub: userId, sid: sessionId, sv: sessionVersion }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
 }
 
 function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET).sub;
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (
+      typeof payload.sub !== "string" ||
+      typeof payload.sid !== "string" ||
+      !Number.isInteger(payload.sv)
+    ) {
+      return null;
+    }
+    return {
+      userId: payload.sub,
+      sessionId: payload.sid,
+      sessionVersion: payload.sv,
+    };
   } catch {
     return null;
   }
@@ -758,6 +779,29 @@ function buildClearedAuthCookie(req) {
   });
 }
 
+function normalizeSessionUserAgent(req) {
+  const headerValue = Array.isArray(req.headers["user-agent"])
+    ? req.headers["user-agent"][0]
+    : req.headers["user-agent"];
+  const userAgent = String(headerValue || "").replace(/[\u0000-\u001F\u007F]/g, " ").trim();
+  return userAgent ? userAgent.slice(0, AUTH_SESSION_USER_AGENT_MAX_LENGTH) : null;
+}
+
+async function createAuthenticatedSession(user, req) {
+  const expiresAt = new Date(Date.now() + AUTH_COOKIE_MAX_AGE_SECONDS * 1000);
+  const session = await prisma.authSession.create({
+    data: {
+      id: crypto.randomUUID(),
+      userId: user.id,
+      expiresAt,
+      userAgent: normalizeSessionUserAgent(req),
+    },
+    select: { id: true },
+  });
+
+  return signToken(user.id, session.id, user.sessionVersion);
+}
+
 async function seedProviders() {
   await prisma.marketplaceProvider.createMany({
     data: [
@@ -769,11 +813,11 @@ async function seedProviders() {
   });
 }
 
-function getUserId(req) {
+function getAuthClaims(req) {
   const auth = req.headers["authorization"];
   if (auth?.startsWith("Bearer ")) {
-    const bearerUserId = verifyToken(auth.slice(7));
-    if (bearerUserId) return bearerUserId;
+    const bearerClaims = verifyToken(auth.slice(7));
+    if (bearerClaims) return bearerClaims;
   }
   const cookies = parseCookies(req);
   return verifyToken(cookies[AUTH_COOKIE_NAME] || "");
@@ -789,21 +833,45 @@ function respondAuthenticationRequired(req, res, { clearCookie = false } = {}) {
 }
 
 async function requireAuthenticatedUser(req, res, select = { id: true }) {
-  const uid = getUserId(req);
-  if (!uid) {
-    respondAuthenticationRequired(req, res);
+  const claims = getAuthClaims(req);
+  if (!claims) {
+    respondAuthenticationRequired(req, res, { clearCookie: true });
     return null;
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: uid },
-    select,
+    where: { id: claims.userId },
+    select: { ...select, sessionVersion: true },
   });
 
-  if (!user) {
+  if (!user || user.sessionVersion !== claims.sessionVersion) {
     respondAuthenticationRequired(req, res, { clearCookie: true });
     return null;
   }
+
+  const now = new Date();
+  const session = await prisma.authSession.findFirst({
+    where: {
+      id: claims.sessionId,
+      userId: claims.userId,
+      revokedAt: null,
+      expiresAt: { gt: now },
+    },
+    select: { id: true, lastSeenAt: true },
+  });
+  if (!session) {
+    respondAuthenticationRequired(req, res, { clearCookie: true });
+    return null;
+  }
+
+  if (now.getTime() - session.lastSeenAt.getTime() >= AUTH_SESSION_LAST_SEEN_UPDATE_MS) {
+    await prisma.authSession.update({
+      where: { id: session.id },
+      data: { lastSeenAt: now },
+    });
+  }
+
+  req.authSession = { id: session.id };
 
   return user;
 }
@@ -1113,12 +1181,12 @@ const server = http.createServer(async (req, res) => {
           return;
         }
       }
-      const pwdErr = validatePassword(body.password);
       const emailErr = validateEmail(email);
+      const passwordFormatErr = validatePasswordFormat(body.password);
 
       if (!name) return jsonResponse(res, 400, { error: "Name is required." });
       if (emailErr) return jsonResponse(res, 400, { error: emailErr });
-      if (pwdErr) return jsonResponse(res, 400, { error: pwdErr });
+      if (passwordFormatErr) return jsonResponse(res, 400, { error: passwordFormatErr });
 
       const existingUser = await prisma.user.findUnique({
         where: { email },
@@ -1130,6 +1198,9 @@ const server = http.createServer(async (req, res) => {
         }
         return jsonResponse(res, 409, { error: "User with this email already exists" });
       }
+
+      const pwdErr = await validateNewPassword(body.password);
+      if (pwdErr) return jsonResponse(res, 400, { error: pwdErr });
 
       const activationToken = generateActivationToken();
       const activationTokenHash = hashActivationToken(activationToken);
@@ -1214,6 +1285,7 @@ const server = http.createServer(async (req, res) => {
           isActive: true,
           failedLoginAttempts: true,
           lockedAt: true,
+          sessionVersion: true,
         },
       });
       if (!user) return jsonResponse(res, 401, { error: "Invalid email or password" });
@@ -1227,8 +1299,8 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      const pwdOk = verifyPassword(body.password, user.passwordHash);
-      if (!pwdOk) {
+      const passwordVerification = verifyPassword(body.password, user.passwordHash);
+      if (!passwordVerification.valid) {
         const failedLoginAttempts = (user.failedLoginAttempts ?? 0) + 1;
         if (failedLoginAttempts >= MAX_LOGIN_ATTEMPTS) {
           await prisma.user.update({
@@ -1259,15 +1331,19 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
+      const loginUpdate = {};
       if ((user.failedLoginAttempts ?? 0) > 0 || user.lockedAt) {
-        await prisma.user.update({
-          where: { id: user.id },
-          data: loginLockStateClearedData(),
-        });
+        Object.assign(loginUpdate, loginLockStateClearedData());
+      }
+      if (passwordVerification.needsRehash) {
+        loginUpdate.passwordHash = hashPassword(body.password);
+      }
+      if (Object.keys(loginUpdate).length > 0) {
+        await prisma.user.update({ where: { id: user.id }, data: loginUpdate });
       }
 
       await seedProviders();
-      const token = signToken(user.id);
+      const token = await createAuthenticatedSession(user, req);
       return jsonResponse(
         res,
         200,
@@ -1502,10 +1578,10 @@ const server = http.createServer(async (req, res) => {
       const emailErr = validateEmail(email);
       const resetCode = normalizeResetCode(body.code ?? body.token);
       const resetCodeErr = validateResetCode(resetCode);
-      const pwdErr = validatePassword(body.password);
+      const passwordFormatErr = validatePasswordFormat(body.password);
       if (emailErr) return jsonResponse(res, 400, { error: emailErr });
       if (resetCodeErr) return jsonResponse(res, 400, { error: resetCodeErr });
-      if (pwdErr) return jsonResponse(res, 400, { error: pwdErr });
+      if (passwordFormatErr) return jsonResponse(res, 400, { error: passwordFormatErr });
 
       const user = await prisma.user.findUnique({
         where: { email },
@@ -1553,17 +1629,28 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 400, { error: "Invalid reset code." });
       }
 
-      await prisma.user.update({
-        where: { email },
-        data: {
-          passwordHash: hashPassword(body.password),
-          isActive: true,
-          activationTokenHash: null,
-          activationTokenExpiresAt: null,
-          ...loginLockStateClearedData(),
-          ...passwordResetStateClearedData(),
-          ...(user.isActive ? {} : { activatedAt: new Date() }),
-        },
+      const pwdErr = await validateNewPassword(body.password);
+      if (pwdErr) return jsonResponse(res, 400, { error: pwdErr });
+
+      const passwordResetAt = new Date();
+      await prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { email },
+          data: {
+            passwordHash: hashPassword(body.password),
+            isActive: true,
+            activationTokenHash: null,
+            activationTokenExpiresAt: null,
+            sessionVersion: { increment: 1 },
+            ...loginLockStateClearedData(),
+            ...passwordResetStateClearedData(),
+            ...(user.isActive ? {} : { activatedAt: passwordResetAt }),
+          },
+        });
+        await tx.authSession.updateMany({
+          where: { userId: user.id, revokedAt: null },
+          data: { revokedAt: passwordResetAt },
+        });
       });
 
       const wasLocked = Boolean(user.lockedAt);
@@ -1575,7 +1662,7 @@ const server = http.createServer(async (req, res) => {
             : wasLocked
               ? "Your account has been unlocked and your password has been updated. You can now log in."
               : "Password has been reset. You can now log in with the new password.",
-      });
+      }, { "Set-Cookie": buildClearedAuthCookie(req) });
     }
 
     // ── Auth: Me ──
@@ -1589,7 +1676,90 @@ const server = http.createServer(async (req, res) => {
       return jsonResponse(res, 200, { user: { id: user.id, email: user.email, name: user.name } });
     }
 
+    if (path === "/auth/sessions" && req.method === "GET") {
+      const currentUser = await requireAuthenticatedUser(req, res);
+      if (!currentUser) return;
+
+      const sessions = await prisma.authSession.findMany({
+        where: {
+          userId: currentUser.id,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { lastSeenAt: "desc" },
+        select: {
+          id: true,
+          createdAt: true,
+          lastSeenAt: true,
+          expiresAt: true,
+          userAgent: true,
+        },
+      });
+      return jsonResponse(res, 200, {
+        sessions: sessions.map((session) => ({
+          ...session,
+          current: session.id === req.authSession.id,
+        })),
+      }, { "Cache-Control": "no-store" });
+    }
+
+    if (path === "/auth/sessions" && req.method === "DELETE") {
+      const currentUser = await requireAuthenticatedUser(req, res);
+      if (!currentUser) return;
+
+      const revoked = await prisma.authSession.updateMany({
+        where: {
+          userId: currentUser.id,
+          id: { not: req.authSession.id },
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      });
+      return jsonResponse(res, 200, {
+        message: "Other active sessions have been ended.",
+        endedSessions: revoked.count,
+      }, { "Cache-Control": "no-store" });
+    }
+
+    const sessionMatch = path.match(/^\/auth\/sessions\/([^/]+)$/);
+    if (sessionMatch && req.method === "DELETE") {
+      const currentUser = await requireAuthenticatedUser(req, res);
+      if (!currentUser) return;
+
+      const sessionId = sessionMatch[1];
+      const revoked = await prisma.authSession.updateMany({
+        where: {
+          id: sessionId,
+          userId: currentUser.id,
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      });
+      if (revoked.count === 0) {
+        return jsonResponse(res, 404, { error: "Active session not found." }, { "Cache-Control": "no-store" });
+      }
+
+      const isCurrentSession = sessionId === req.authSession.id;
+      return jsonResponse(res, 200, {
+        message: isCurrentSession ? "Current session ended." : "Session ended.",
+      }, {
+        "Cache-Control": "no-store",
+        ...(isCurrentSession ? { "Set-Cookie": buildClearedAuthCookie(req) } : {}),
+      });
+    }
+
     if (path === "/auth/logout" && req.method === "POST") {
+      const currentUser = await requireAuthenticatedUser(req, res);
+      if (!currentUser) return;
+
+      await prisma.authSession.updateMany({
+        where: {
+          id: req.authSession.id,
+          userId: currentUser.id,
+          revokedAt: null,
+        },
+        data: { revokedAt: new Date() },
+      });
       return jsonResponse(
         res,
         200,
