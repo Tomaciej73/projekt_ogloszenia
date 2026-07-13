@@ -158,6 +158,24 @@ To stop and remove all data volumes:
 docker compose down -v
 ```
 
+### Production deployment
+
+`docker-compose.yml` is the local-development base and intentionally publishes PostgreSQL, Redis, MinIO, its console, API, and web ports for local diagnostics. Do not deploy it by itself to a VPS.
+
+For production, set the public canonical URL in `.env`, then combine the base file with the production override:
+
+```dotenv
+WEB_PUBLIC_URL=https://app.example.com
+```
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+The production override forces `NODE_ENV=production`, removes every host mapping for PostgreSQL, Redis, MinIO (including the console), and the API, and binds only the web runtime to `127.0.0.1:${WEB_PORT}`. Configure the VPS reverse proxy to terminate TLS and forward the public virtual host to that loopback address. It must preserve the original `Host` header and set `X-Forwarded-Proto: https`; include the normal `X-Forwarded-For` header as well.
+
+Do not forward MinIO or its console through the reverse proxy. The application bucket is private: listing media is read through the same-origin `/media-files/...` API route after session and listing-owner authorization. This is intentional; an opaque object key is not an access-control mechanism.
+
 ### 5. Install Dependencies
 
 ```powershell

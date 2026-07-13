@@ -14,12 +14,9 @@ function encodePathSegments(value: string): string {
 @Injectable()
 export class MediaService {
   /**
-   * Placeholder for S3/MinIO upload logic.
-   * Will integrate with MinIO client when full media module is implemented.
+   * Builds the same-origin API route for an already authorized media object.
    */
-  async getUploadUrl(key: string, contentType: string): Promise<string> {
-    void contentType;
-    const storageBaseUrl = (config.S3_PUBLIC_ENDPOINT || config.S3_ENDPOINT).replace(/\/$/, "");
-    return new URL(`${config.S3_BUCKET}/${encodePathSegments(key)}`, `${storageBaseUrl}/`).toString();
+  getMediaPath(key: string): string {
+    return `/media-files/${encodeURIComponent(config.S3_BUCKET)}/${encodePathSegments(key)}`;
   }
 }

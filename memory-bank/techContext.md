@@ -47,7 +47,7 @@ All dependency versions must follow the project policy defined in `.clinerules/0
 
 ## Application Version
 
-- `0.4.2` (2026-07-13) - PATCH security release. Marketplace-account API responses now use an explicit credential-safe DTO, and mock account linking is restricted to the development runtime until official provider OAuth flows are implemented.
+- `0.4.3` (2026-07-13) - PATCH security release. Production Compose removes public infrastructure/API ports, MinIO storage is private, and media delivery requires authenticated listing-owner authorization through the API.
 
 ## Verified Versions
 
@@ -111,7 +111,9 @@ Checked 2026-07-10 via official Node.js / npm registry / Docker Hub sources.
 - API runtime on host port `3001`
 - Web runtime on host port `3000`
 - Browser clients now call the web origin only; `apps/web/front-server.js` proxies selected API routes to the API runtime target.
-- Browser-rendered listing photos also stay on the web origin; `apps/web/front-server.js` proxies `/media-files/...` to MinIO so thumbnails do not depend on exposing direct MinIO hostnames.
+- Browser-rendered listing photos stay on the web origin; `apps/web/front-server.js` proxies `/media-files/...` to the API, which authenticates the request and verifies listing ownership before it reads from private MinIO storage.
+- The API container depends on MinIO health and replaces any legacy public bucket policy during startup before accepting requests.
+- `docker-compose.prod.yml` clears host ports for PostgreSQL, Redis, MinIO, its console, and API. It binds only web to loopback for a TLS reverse proxy.
 - API/web/worker app containers now run as the non-root `node` user and expose image-defined Docker healthchecks.
 - As of 2026-07-10 the final runtime image sizes are approximately `751 MB` (API), `731 MB` (web), and `276 MB` (worker); Docker BuildKit cache is still much larger and requires operational pruning when disk pressure matters.
 - Security scanners are not part of `docker-compose.yml` and must remain isolated from the runtime stack; run them as disposable separate containers or local tools, then clean up their images/cache after the assessment.
@@ -122,8 +124,8 @@ Key `.env` groups:
 
 - **Database:** `DATABASE_URL`
 - **Redis:** `REDIS_URL`
-- **Storage:** `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
-- **Web proxy:** `API_PROXY_URL`, `MINIO_PROXY_URL`
+- **Storage:** `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
+- **Web proxy:** `API_PROXY_URL`
 - **Auth:** `JWT_SECRET`, `SESSION_SECRET`, `CSRF_SECRET`
 - **Auth rate limiting:** `AUTH_RATE_LIMIT_WINDOW_MS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`, `AUTH_LOGIN_RATE_LIMIT_WINDOW_MS`, `AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS`, `AUTH_REGISTER_RATE_LIMIT_WINDOW_MS`, `AUTH_REGISTER_RATE_LIMIT_MAX_REQUESTS`, `AUTH_FORGOT_PASSWORD_RATE_LIMIT_WINDOW_MS`, `AUTH_FORGOT_PASSWORD_RATE_LIMIT_MAX_REQUESTS`, `AUTH_RESET_PASSWORD_RATE_LIMIT_WINDOW_MS`, `AUTH_RESET_PASSWORD_RATE_LIMIT_MAX_REQUESTS`, `AUTH_ACTIVATE_RATE_LIMIT_WINDOW_MS`, `AUTH_ACTIVATE_RATE_LIMIT_MAX_REQUESTS`, `AUTH_PASSWORD_RESET_RESEND_COOLDOWN_MS`
 - **SMTP:** `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`
@@ -197,7 +199,8 @@ packages/config/
 - API runtime can honor optional `API_PUBLIC_URL` and `WEB_PUBLIC_URL` environment variables to avoid generating auth links with `localhost` when the app is exposed behind a public domain.
 - Auth CORS now responds only for trusted web origins, and invalid auth preflight origins receive `403 Origin not allowed`.
 - Listing photo responses normalize legacy direct-MinIO URLs and now prefer web-origin `/media-files/...` links, so older rows that still store `http://localhost:9000/...` continue working in the UI.
-- The media proxy strips client `Origin` / `Referer`, blocks the bare `/media-files/` route, and forwards only an allowlisted set of response headers with `Cross-Origin-Resource-Policy: same-origin`.
+- MinIO objects are private. API startup replaces legacy public bucket policy before listening. `/media-files/...` is handled by the API, which authenticates the request, verifies listing ownership, rejects traversal/malformed encodings, and streams only accepted image MIME types inline; unknown legacy objects are `application/octet-stream` attachments with `Cache-Control: private, no-store` and `Cross-Origin-Resource-Policy: same-origin`.
+- Production must use `docker-compose.prod.yml` together with the base Compose file and expose only web through a TLS-terminating reverse proxy. PostgreSQL, Redis, MinIO, its console, and API have no VPS host ports in that profile.
 - SMTP relay acceptance alone is not enough for Gmail/Onet inbox delivery; verified sender mailbox plus aligned SPF/DKIM/DMARC remain required.
 - Verbose nodemailer transport logging is disabled in runtime to avoid leaking reset codes or SMTP session details into container logs.
 - SMTP certificate verification is enabled by default again; invalid certificates are allowed only through the explicit `SMTP_TLS_ALLOW_INVALID_CERTS=true` debug flag.

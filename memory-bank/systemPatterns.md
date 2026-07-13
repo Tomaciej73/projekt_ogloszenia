@@ -28,11 +28,19 @@ The system follows a modular monorepo architecture with clear separation between
 
 ### 2. Same-Origin Media Proxy Pattern
 - Browser-rendered listing photos are served through `/media-files/<bucket>/<key>` on the web origin instead of exposing direct MinIO URLs to the client.
-- `apps/web/front-server.js` proxies those requests to the internal MinIO target from `MINIO_PROXY_URL`.
-- `apps/api/db-server.js` generates media URLs through the web origin and normalizes legacy direct-MinIO or `localhost` photo URLs in listing responses, so existing records keep working after deployment or hostname changes.
-- The media proxy strips browser `Origin` and `Referer` before forwarding to MinIO, blocks the bare `/media-files/` path with `404`, forwards only a safe allowlist of response headers, and rewrites only same-origin MinIO `Location` redirects back onto `/media-files/...`.
+- `apps/web/front-server.js` proxies `/media-files/...` to the API, never directly to MinIO.
+- `apps/api/db-server.js` authenticates the request and verifies that the requested object belongs to one of the current user's listing drafts before streaming it from the private bucket. Legacy photo rows are checked against the user's stored `photoUrls` before access is allowed.
+- API startup waits for the MinIO healthcheck and replaces the legacy public bucket policy before listening for requests, so deploying the change revokes anonymous reads without waiting for a new upload.
+- The API generates media URLs through the web origin and normalizes legacy direct-MinIO or `localhost` photo URLs in listing responses, so existing records keep working after deployment or hostname changes.
+- Object-key parsing rejects traversal and malformed encodings. Responses are same-origin-only, use `nosniff`, and are private/no-store.
 
-### 3. Startup Migration Gate
+### 3. Production Compose Override Pattern
+- `docker-compose.yml` remains the local-development base, including host ports for diagnostics.
+- Production starts with `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`.
+- `docker-compose.prod.yml` clears host port publications for PostgreSQL, Redis, MinIO, the MinIO console, and API; it exposes only the web container on `127.0.0.1:${WEB_PORT}` for a TLS-terminating reverse proxy.
+- The API, worker, and web containers are forced into `NODE_ENV=production` by the production override.
+
+### 4. Startup Migration Gate
 - The API container runs `prisma migrate deploy` before `apps/api/db-server.js` starts accepting traffic.
 - This keeps Docker and VPS deployments aligned with the checked-in Prisma migration history.
 - If a migration fails, the API container exits instead of serving auth or listing requests against an outdated schema.

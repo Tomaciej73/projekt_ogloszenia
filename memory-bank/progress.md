@@ -10,7 +10,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 ### Infrastructure
 - [x] `.clinerules/` - all 5 rules files, including "never revert owner changes"
 - [x] pnpm monorepo with 7 workspace packages
-- [x] Docker Compose with PostgreSQL 18, Redis 8, MinIO, API (3001), Web (3000)
+- [x] Docker Compose local-development base plus production override that leaves only web reachable on VPS loopback
 - [x] API container startup now runs `prisma migrate deploy` before serving requests, so Docker/VPS upgrades apply pending schema changes automatically
 - [x] Active API/web/worker runtimes now load per-runtime validated config from `packages/config` via bridge files, instead of reading `process.env` with dangerous secret or `localhost` fallbacks
 - [x] App runtime images now use an explicit `.dockerignore`, multi-stage `pnpm deploy` runtime packaging, explicit Prisma config paths, non-root `node` users, and Docker healthchecks
@@ -22,7 +22,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
-### Backend API (`apps/api/db-server.js`) v0.4.2
+### Backend API (`apps/api/db-server.js`) v0.4.3
 - [x] `POST /auth/register` - creates inactive accounts, generates activation tokens, sends activation email, and returns activation-required messaging
 - [x] `GET /auth/activate` - validates activation link, activates account, and renders an HTML confirmation page
 - [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
@@ -46,6 +46,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] JSON request bodies are now capped in-memory, with a 1 MB default limit and a dedicated higher cap for `/media/upload`
 - [x] Pretty JSON responses (2-space indent)
 - [x] Marketplace-account browser responses use an explicit safe DTO that excludes provider user identifiers, access tokens, refresh tokens, and token-expiry metadata; mock account linking is development-only until official OAuth is implemented
+- [x] `/media-files/:bucket/:key` requires an authenticated user and verifies listing ownership before the API streams an object from the private MinIO bucket
 
 ### Worker (`apps/worker/worker.js`)
 - [x] BullMQ Worker processing `publication` queue
@@ -59,7 +60,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `public/dashboard.html` - publication dashboard: list listings, select provider, publish, and send CSRF-protected mutating requests
 - [x] `public/register.html` - standalone registration page with strong password rules, activation-required messaging, and CSRF-protected signup
 - [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint, DB-synced remaining login-attempt messaging, and CSRF-protected login
-- [x] `front-server.js` - static file server plus same-origin API and MinIO media proxy for VPS/Nginx deployment
+- [x] `front-server.js` - static file server plus same-origin API proxy, including media requests that the API authorizes before MinIO access
 - [x] User-visible version labels now render from the shared package SemVer (`0.4.1`) instead of duplicated hardcoded footer/log strings
 - [x] Main auth flows now surface rate-limit hits as warning toasts with retry timing
 - [x] `apps/web/src/` scaffold no longer hardcodes `localhost` API URLs; it now supports optional `NEXT_PUBLIC_API_BASE_URL` with same-origin fallback
@@ -82,7 +83,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Mail config warnings for placeholder/misaligned SMTP sender settings
 - [x] Runtime SMTP config supports explicit `SMTP_FROM_NAME`, `SMTP_REPLY_TO`, `SMTP_SENDER`, and optional public URL envs for domain-based auth links
 - [x] Listing media URLs now stay on the web origin, so thumbnails no longer depend on direct `localhost:9000` or MinIO host exposure
-- [x] The `/media-files` proxy now blocks the bare route, strips browser `Origin`/`Referer`, rewrites only same-origin MinIO redirects, and no longer reflects MinIO CORS behavior back to browsers
+- [x] MinIO media is private and `/media-files` now reaches the API, which checks authentication plus listing ownership before streaming an object; direct MinIO browser access is removed
 - [x] Uploads now accept only server-validated JPG/PNG/GIF/WebP payloads, blocking renamed text/script files and malformed image payloads before MinIO storage
 - [x] Oversized JSON/base64 uploads are rejected early with `413 Payload Too Large` instead of being buffered into RAM without a limit
 - [x] Static HTML now ships with CSP and standard browser security headers from the front server

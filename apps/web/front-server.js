@@ -7,7 +7,6 @@ const { config } = require("./runtime-config");
 const { APP_VERSION } = require("@multiportal/config/app-version");
 
 const API_PROXY_URL = config.API_PROXY_URL;
-const MEDIA_PROXY_URL = config.MINIO_PROXY_URL;
 const API_ROUTE_PREFIXES = [
   "/auth",
   "/listings",
@@ -15,9 +14,9 @@ const API_ROUTE_PREFIXES = [
   "/marketplace-accounts",
   "/publication-jobs",
   "/media",
+  "/media-files",
   "/health",
 ];
-const MEDIA_ROUTE_PREFIX = "/media-files";
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
   "keep-alive",
@@ -28,25 +27,8 @@ const HOP_BY_HOP_HEADERS = new Set([
   "transfer-encoding",
   "upgrade",
 ]);
-const MEDIA_RESPONSE_HEADER_ALLOWLIST = new Set([
-  "accept-ranges",
-  "cache-control",
-  "content-disposition",
-  "content-encoding",
-  "content-length",
-  "content-range",
-  "content-type",
-  "etag",
-  "expires",
-  "last-modified",
-]);
-
 function isApiRoute(pathname) {
   return API_ROUTE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
-}
-
-function isMediaRoute(pathname) {
-  return pathname === MEDIA_ROUTE_PREFIX || pathname.startsWith(`${MEDIA_ROUTE_PREFIX}/`);
 }
 
 function buildBaseSecurityHeaders() {
@@ -89,15 +71,6 @@ function buildHtmlSecurityHeaders(nonce) {
   };
 }
 
-function sendPlainText(res, status, message, extraHeaders = {}) {
-  res.writeHead(status, {
-    "Content-Type": "text/plain; charset=utf-8",
-    ...buildBaseSecurityHeaders(),
-    ...extraHeaders,
-  });
-  res.end(message);
-}
-
 function buildProxyRequestHeaders(req, extraHeaders = {}) {
   const headers = { ...req.headers, ...extraHeaders };
 
@@ -112,46 +85,6 @@ function buildProxyRequestHeaders(req, extraHeaders = {}) {
   }
 
   return headers;
-}
-
-function rewriteMediaLocationHeader(locationHeader) {
-  if (!locationHeader) return null;
-
-  try {
-    const target = new URL(locationHeader, MEDIA_PROXY_URL);
-    const mediaOrigin = new URL(MEDIA_PROXY_URL).origin;
-
-    if (target.origin !== mediaOrigin) {
-      return null;
-    }
-
-    return `${MEDIA_ROUTE_PREFIX}${target.pathname}${target.search}`;
-  } catch {
-    return null;
-  }
-}
-
-function buildMediaResponseHeaders(proxyHeaders) {
-  const responseHeaders = {
-    ...buildBaseSecurityHeaders(),
-    "Cross-Origin-Resource-Policy": "same-origin",
-  };
-
-  for (const [headerName, headerValue] of Object.entries(proxyHeaders)) {
-    const normalizedHeaderName = headerName.toLowerCase();
-    if (!MEDIA_RESPONSE_HEADER_ALLOWLIST.has(normalizedHeaderName) || headerValue === undefined) {
-      continue;
-    }
-
-    responseHeaders[headerName] = headerValue;
-  }
-
-  const rewrittenLocation = rewriteMediaLocationHeader(proxyHeaders.location);
-  if (rewrittenLocation) {
-    responseHeaders.Location = rewrittenLocation;
-  }
-
-  return responseHeaders;
 }
 
 function proxyToApi(req, res, url) {
@@ -177,44 +110,9 @@ function proxyToApi(req, res, url) {
   req.pipe(proxyReq);
 }
 
-function proxyToMedia(req, res, url) {
-  const mediaPath = url.pathname.slice(MEDIA_ROUTE_PREFIX.length);
-  if (!mediaPath || mediaPath === "/") {
-    sendPlainText(res, 404, "Media object not found", { "Cache-Control": "no-store" });
-    return;
-  }
-
-  const target = new URL(`${mediaPath}${url.search}`, MEDIA_PROXY_URL);
-  const client = target.protocol === "https:" ? https : http;
-
-  const proxyReq = client.request(target, {
-    method: req.method,
-    headers: buildProxyRequestHeaders(req, {
-      host: target.host,
-      origin: undefined,
-      referer: undefined,
-    }),
-  }, (proxyRes) => {
-    res.writeHead(proxyRes.statusCode || 502, buildMediaResponseHeaders(proxyRes.headers));
-    proxyRes.pipe(res);
-  });
-
-  proxyReq.on("error", (error) => {
-    res.writeHead(502, { "Content-Type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify({ error: "Media proxy request failed", detail: error.message }));
-  });
-
-  req.pipe(proxyReq);
-}
-
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let filePath = url.pathname;
-
-  if (isMediaRoute(url.pathname)) {
-    proxyToMedia(req, res, url);
-    return;
-  }
 
   if (isApiRoute(url.pathname)) {
     proxyToApi(req, res, url);

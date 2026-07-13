@@ -85,7 +85,6 @@ export const redisEnvSchema = z.object({
 
 export const storageEnvSchema = z.object({
   S3_ENDPOINT: requiredUrlSchema,
-  S3_PUBLIC_ENDPOINT: optionalUrlSchema,
   S3_REGION: requiredStringSchema.default("us-east-1"),
   S3_BUCKET: requiredStringSchema,
   S3_ACCESS_KEY: requiredStringSchema,
@@ -154,7 +153,6 @@ export const publicUrlEnvSchema = z.object({
 
 export const webProxyEnvSchema = z.object({
   API_PROXY_URL: requiredUrlSchema,
-  MINIO_PROXY_URL: requiredUrlSchema,
   WEB_PORT: integerFromEnvSchema,
 });
 

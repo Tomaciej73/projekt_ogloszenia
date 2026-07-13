@@ -12,6 +12,7 @@ const {
 } = require("./marketplace-account-response");
 const { config } = require("./runtime-config");
 const { ensureBucket, minioClient, BUCKET } = require("./minio");
+const { MEDIA_PROXY_PREFIX, buildMediaProxyPath, extractMediaObjectKey } = require("./media-access");
 const { sendPasswordResetEmail, sendAccountActivationEmail, formatMailDeliveryResult } = require("./mail");
 const { APP_VERSION } = require("@multiportal/config/app-version");
 
@@ -33,7 +34,6 @@ const RESET_EXPIRY_MS = 3600000;
 const ACTIVATION_EXPIRY_MS = 3600000;
 const MAX_LOGIN_ATTEMPTS = 5;
 const MAX_RESET_ATTEMPTS = 5;
-const MEDIA_PROXY_PREFIX = "/media-files";
 const AUTH_COOKIE_NAME = "mp_auth";
 const CSRF_COOKIE_NAME = "mp_csrf";
 const CSRF_HEADER_NAME = "x-csrf-token";
@@ -44,6 +44,7 @@ const MAX_UPLOAD_BASE64_BODY_BYTES = Math.ceil(MAX_UPLOAD_FILE_SIZE_BYTES / 3) *
 const UPLOAD_JSON_BODY_LIMIT_BYTES = MAX_UPLOAD_BASE64_BODY_BYTES + 256 * KILOBYTE;
 const MAX_IMAGE_DIMENSION = 12000;
 const ALLOWED_IMAGE_FILE_TYPES_LABEL = "JPG, PNG, GIF, or WebP";
+const ALLOWED_MEDIA_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 const INACTIVE_LOGIN_MESSAGE = "Your account is not active yet. Check your email for the activation link or use Forgot password to activate your account.";
 const INACTIVE_REGISTER_MESSAGE = "An account with this email already exists but is not active. Use Forgot password to activate your account and set a new password.";
 const LOCKED_LOGIN_MESSAGE = "Your account is locked after 5 failed login attempts. Use Forgot password to unlock your account and set a new password.";
@@ -476,73 +477,14 @@ function buildActivationUrl(req, email, token) {
   return `${baseUrl}/auth/activate?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`;
 }
 
-function safeDecodePathSegment(value) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-function encodePathSegments(value) {
-  return String(value || "")
-    .split("/")
-    .filter((segment) => segment.length > 0)
-    .map((segment) => encodeURIComponent(safeDecodePathSegment(segment)))
-    .join("/");
-}
-
-function decodePathSegments(value) {
-  return String(value || "")
-    .split("/")
-    .filter((segment) => segment.length > 0)
-    .map((segment) => safeDecodePathSegment(segment))
-    .join("/");
-}
-
-function buildMediaProxyPath(key, bucket = BUCKET) {
-  return `${MEDIA_PROXY_PREFIX}/${encodeURIComponent(bucket)}/${encodePathSegments(key)}`;
-}
-
 function buildMediaPublicUrl(req, key, bucket = BUCKET) {
   return `${getMediaBaseUrl(req)}${buildMediaProxyPath(key, bucket)}`;
-}
-
-function extractMediaObjectKey(rawUrl, bucket = BUCKET) {
-  if (typeof rawUrl !== "string") return null;
-  const trimmed = rawUrl.trim();
-  if (!trimmed) return null;
-
-  const bucketPrefix = `/${bucket}/`;
-  const proxyPrefix = `${MEDIA_PROXY_PREFIX}/${bucket}/`;
-
-  if (trimmed.startsWith(proxyPrefix)) {
-    return decodePathSegments(trimmed.slice(proxyPrefix.length));
-  }
-
-  if (trimmed.startsWith(`${bucket}/`)) {
-    return decodePathSegments(trimmed.slice(bucket.length + 1));
-  }
-
-  try {
-    const parsed = new URL(trimmed, "http://placeholder.local");
-    if (parsed.pathname.startsWith(proxyPrefix)) {
-      return decodePathSegments(parsed.pathname.slice(proxyPrefix.length));
-    }
-    if (parsed.pathname.startsWith(bucketPrefix)) {
-      return decodePathSegments(parsed.pathname.slice(bucketPrefix.length));
-    }
-  } catch {
-    return null;
-  }
-
-  return null;
 }
 
 function normalizeMediaUrl(req, rawUrl) {
   const storedUrl = normalizeStoredPhotoUrl(rawUrl);
   if (!storedUrl) return null;
-  const key = extractMediaObjectKey(storedUrl);
+  const key = extractMediaObjectKey(storedUrl, BUCKET);
   return key ? buildMediaPublicUrl(req, key) : null;
 }
 
@@ -551,8 +493,8 @@ function normalizeStoredPhotoUrl(rawUrl) {
   const trimmed = rawUrl.trim();
   if (!trimmed || trimmed.length > PHOTO_URL_MAX) return null;
   if (/[\u0000-\u001F\u007F"'<>`\\]/.test(trimmed)) return null;
-  const key = extractMediaObjectKey(trimmed);
-  return key ? buildMediaProxyPath(key) : null;
+  const key = extractMediaObjectKey(trimmed, BUCKET);
+  return key ? buildMediaProxyPath(key, BUCKET) : null;
 }
 
 function sanitizePhotoUrls(rawPhotoUrls) {
@@ -594,6 +536,88 @@ function normalizeListingResponse(req, listing) {
         .filter(Boolean)
       : listing.media,
   };
+}
+
+async function findOwnedMediaMetadata(userId, key) {
+  const media = await prisma.listingMedia.findFirst({
+    where: {
+      key,
+      listingDraft: { userId },
+    },
+    select: {
+      mimeType: true,
+    },
+  });
+
+  if (media) return media;
+
+  // Preserve access to pre-ListingMedia records without permitting object-key guessing.
+  const legacyListings = await prisma.listingDraft.findMany({
+    where: { userId },
+    select: { photoUrls: true },
+  });
+  const isOwnedLegacyPhoto = legacyListings.some(({ photoUrls }) => (
+    Array.isArray(photoUrls) && photoUrls.some((url) => extractMediaObjectKey(url, BUCKET) === key)
+  ));
+
+  return isOwnedLegacyPhoto ? { mimeType: null } : null;
+}
+
+async function streamAuthorizedMedia(req, res, path) {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return jsonResponse(res, 405, { error: "Method not allowed" }, { Allow: "GET, HEAD", "Cache-Control": "no-store" });
+  }
+
+  const key = extractMediaObjectKey(path, BUCKET);
+  if (!key) {
+    return jsonResponse(res, 404, { error: "Media not found" }, { "Cache-Control": "no-store" });
+  }
+
+  const currentUser = await requireAuthenticatedUser(req, res);
+  if (!currentUser) return;
+
+  const media = await findOwnedMediaMetadata(currentUser.id, key);
+  if (!media) {
+    return jsonResponse(res, 404, { error: "Media not found" }, { "Cache-Control": "no-store" });
+  }
+
+  let objectStat;
+  try {
+    objectStat = await minioClient.statObject(BUCKET, key);
+  } catch (error) {
+    console.warn("Authorized media object could not be read:", error.message);
+    return jsonResponse(res, 404, { error: "Media not found" }, { "Cache-Control": "no-store" });
+  }
+
+  const objectContentType = objectStat.metaData?.["content-type"] || objectStat.metaData?.["Content-Type"];
+  const contentType = [media.mimeType, objectContentType]
+    .map((value) => String(value || "").toLowerCase())
+    .find((value) => ALLOWED_MEDIA_MIME_TYPES.has(value)) || "application/octet-stream";
+  const headers = {
+    ...getBaseSecurityHeaders(),
+    "Content-Type": contentType,
+    "Cache-Control": "private, no-store",
+    "Content-Disposition": contentType.startsWith("image/") ? "inline" : "attachment",
+    "Cross-Origin-Resource-Policy": "same-origin",
+  };
+  if (Number.isSafeInteger(objectStat.size) && objectStat.size >= 0) {
+    headers["Content-Length"] = objectStat.size;
+  }
+
+  res.writeHead(200, headers);
+  if (req.method === "HEAD") return res.end();
+
+  try {
+    const objectStream = await minioClient.getObject(BUCKET, key);
+    objectStream.on("error", (error) => {
+      console.warn("Authorized media stream failed:", error.message);
+      if (!res.writableEnded) res.destroy(error);
+    });
+    objectStream.pipe(res);
+  } catch (error) {
+    console.warn("Authorized media stream could not start:", error.message);
+    if (!res.writableEnded) res.destroy(error);
+  }
 }
 
 function getRemainingLoginAttempts(failedLoginAttempts) {
@@ -1057,6 +1081,11 @@ const server = http.createServer(async (req, res) => {
     if (csrfError) {
       return jsonResponse(res, 403, { error: csrfError }, { "Cache-Control": "no-store" });
     }
+
+    if (path === MEDIA_PROXY_PREFIX || path.startsWith(`${MEDIA_PROXY_PREFIX}/`)) {
+      return streamAuthorizedMedia(req, res, path);
+    }
+
     // ── Auth: Register ──
     if (path === "/auth/register" && req.method === "POST") {
       const body = await parseJsonBodyOrRespond(req, res);
@@ -1789,6 +1818,13 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 400, { error: uploadedImage.error });
       }
 
+      const listing = body.listingId
+        ? await prisma.listingDraft.findFirst({ where: { id: body.listingId, userId: uid } })
+        : null;
+      if (body.listingId && !listing) {
+        return jsonResponse(res, 404, { error: "Listing not found" });
+      }
+
       const key = `uploads/${uid}/${Date.now()}-${crypto.randomUUID()}-${uploadedImage.fileName}`;
       const proxyPublicUrl = buildMediaPublicUrl(req, key);
 
@@ -1797,11 +1833,8 @@ const server = http.createServer(async (req, res) => {
         "Content-Type": uploadedImage.mimeType,
       });
 
-      // Record media if listingId is provided
-      if (body.listingId) {
-        const listing = await prisma.listingDraft.findFirst({ where: { id: body.listingId, userId: uid } });
-        if (!listing) return jsonResponse(res, 404, { error: "Listing not found" });
-
+      // Record media if listingId is provided.
+      if (listing) {
         await prisma.listingMedia.create({
           data: {
             url: proxyPublicUrl,
@@ -1870,4 +1903,15 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(config.API_PORT, () => console.log(`API ready at http://localhost:${config.API_PORT} (v${APP_VERSION})`));
+async function startServer() {
+  try {
+    await ensureBucket();
+  } catch (error) {
+    console.error("MinIO initialization failed:", error.message);
+    process.exit(1);
+  }
+
+  server.listen(config.API_PORT, () => console.log(`API ready at http://localhost:${config.API_PORT} (v${APP_VERSION})`));
+}
+
+void startServer();

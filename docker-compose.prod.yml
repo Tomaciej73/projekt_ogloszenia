@@ -1,0 +1,28 @@
+# Production security override. Apply together with docker-compose.yml.
+# It leaves only the web runtime reachable from the VPS host loopback interface.
+# Terminate TLS in a host or edge reverse proxy and forward to 127.0.0.1:${WEB_PORT}.
+
+services:
+  postgres:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  minio:
+    ports: !reset []
+
+  api:
+    ports: !reset []
+    environment:
+      NODE_ENV: production
+
+  worker:
+    environment:
+      NODE_ENV: production
+
+  web:
+    ports: !override
+      - "127.0.0.1:${WEB_PORT}:${WEB_PORT}"
+    environment:
+      NODE_ENV: production
