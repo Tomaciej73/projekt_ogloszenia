@@ -23,7 +23,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
-### Backend API (`apps/api/db-server.js`) v0.4.6
+### Backend API (`apps/api/db-server.js`) v0.4.7
 - [x] `POST /auth/register` - creates inactive accounts, generates activation tokens, sends activation email, and returns activation-required messaging
 - [x] `GET /auth/activate` - validates activation link, activates account, and renders an HTML confirmation page
 - [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
@@ -65,6 +65,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `front-server.js` - static file server plus same-origin API proxy, including media requests that the API authorizes before MinIO access
 - [x] User-visible version labels now render from the shared package SemVer (`0.4.1`) instead of duplicated hardcoded footer/log strings
 - [x] Main auth flows now surface rate-limit hits as warning toasts with retry timing
+- [x] Logout clears all authentication fields and cached account labels from the visible DOM; login forms disable browser autofill hints
 - [x] `apps/web/src/` scaffold no longer hardcodes `localhost` API URLs; it now supports optional `NEXT_PUBLIC_API_BASE_URL` with same-origin fallback
 - [x] Dashboard after login with listing list and stats
 - [x] Session persistence via HttpOnly auth cookie plus non-secret user cache in localStorage (survives refresh/new tab)

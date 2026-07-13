@@ -109,11 +109,11 @@
             <div class="tab" id="registerTab">Register</div>
           </div>
           <div id="tab-login" class="tab-content active">
-            <form id="loginForm">
+            <form id="loginForm" autocomplete="off">
               <label>Email</label>
-              <input type="email" id="loginEmail" required placeholder="you@example.com" autocomplete="email">
+              <input type="email" id="loginEmail" required placeholder="you@example.com" autocomplete="off" autocapitalize="none" spellcheck="false">
               <label>Password</label>
-              <input type="password" id="loginPassword" required placeholder="Your password" autocomplete="current-password">
+              <input type="password" id="loginPassword" required placeholder="Your password" autocomplete="off">
               <button type="submit" id="loginBtn">Log In</button>
               <p id="loginAttemptsHint" style="display:none;font-size:0.75rem;color:rgba(255,255,255,0.55);margin-top:0.75rem"></p>
               <p class="auth-helper-link"><a href="#" id="forgotPasswordLink">Forgot password?</a></p>
@@ -413,11 +413,13 @@
       e.preventDefault();
       const btn = document.getElementById('loginBtn');
       const loginEmail = document.getElementById('loginEmail').value.trim();
+      const loginPasswordInput = document.getElementById('loginPassword');
+      const password = loginPasswordInput.value;
       btn.disabled = true; btn.textContent = 'Logging in...';
       try {
         const res = await apiFetch('/auth/login', {
           method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ email: loginEmail, password: document.getElementById('loginPassword').value }),
+          body: JSON.stringify({ email: loginEmail, password }),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -452,6 +454,7 @@
         setLoginAttemptsHint('');
         localStorage.setItem('token', COOKIE_SESSION_MARKER);
         localStorage.setItem('user', JSON.stringify(data.user));
+        loginPasswordInput.value = '';
         showDashboard(data.user);
         toast('Welcome back, ' + data.user.name + '!', 'success');
       } catch(e) { toast(e.message, 'error'); }
@@ -506,8 +509,26 @@
     function showLoggedOut() {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      csrfToken = '';
+      clearAuthenticationFields();
+      document.getElementById('userName').textContent = '-';
+      document.getElementById('userEmail').textContent = '-';
       document.getElementById('loggedOutView').style.display = 'block';
       document.getElementById('loggedInView').classList.remove('active');
+    }
+
+    function clearAuthenticationFields() {
+      [
+        'loginEmail', 'loginPassword',
+        'regName', 'regEmail', 'regPassword',
+        'forgotEmail', 'resetCode', 'resetPassword',
+      ].forEach((id) => {
+        const field = document.getElementById(id);
+        if (field) field.value = '';
+      });
+      setLoginAttemptsHint('');
+      setForgotPasswordOpen(false);
+      setResetCodeSectionOpen(false);
     }
 
     function showDashboard(user) {
