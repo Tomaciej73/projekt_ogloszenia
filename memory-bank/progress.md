@@ -66,6 +66,8 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] User-visible version labels now render from the shared package SemVer (`0.4.1`) instead of duplicated hardcoded footer/log strings
 - [x] Main auth flows now surface rate-limit hits as warning toasts with retry timing
 - [x] Logout clears all authentication fields and cached account labels from the visible DOM; login forms disable browser autofill hints
+- [x] Account panel groups identity information, labels the active device, and keeps color-coded session actions aligned on one desktop row
+- [x] Empty listing state uses a prominent onboarding CTA, while manual listing refreshes report success or failure through a toast
 - [x] `apps/web/src/` scaffold no longer hardcodes `localhost` API URLs; it now supports optional `NEXT_PUBLIC_API_BASE_URL` with same-origin fallback
 - [x] Dashboard after login with listing list and stats
 - [x] Session persistence via HttpOnly auth cookie plus non-secret user cache in localStorage (survives refresh/new tab)
