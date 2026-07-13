@@ -5,6 +5,11 @@ const { Queue } = require("bullmq");
 const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
+const {
+  buildMarketplaceAccountResponse,
+  isDevelopmentMockMarketplaceAccountLinkingAllowed,
+  marketplaceAccountResponseSelect,
+} = require("./marketplace-account-response");
 const { config } = require("./runtime-config");
 const { ensureBucket, minioClient, BUCKET } = require("./minio");
 const { sendPasswordResetEmail, sendAccountActivationEmail, formatMailDeliveryResult } = require("./mail");
@@ -1822,20 +1827,38 @@ const server = http.createServer(async (req, res) => {
       if (!currentUser) return;
       const uid = currentUser.id;
       if (req.method === "GET") {
-        const accounts = await prisma.marketplaceAccount.findMany({ where: { userId: uid, isActive: true }, include: { marketplaceProvider: true } });
-        return jsonResponse(res, 200, { accounts });
+        const accounts = await prisma.marketplaceAccount.findMany({
+          where: { userId: uid, isActive: true },
+          select: marketplaceAccountResponseSelect,
+        });
+        return jsonResponse(res, 200, {
+          accounts: accounts.map(buildMarketplaceAccountResponse),
+        });
       }
       if (req.method === "POST") {
+        if (!isDevelopmentMockMarketplaceAccountLinkingAllowed(config.NODE_ENV)) {
+          return jsonResponse(res, 501, {
+            error: "Marketplace account linking is unavailable until an official provider OAuth integration is enabled.",
+          });
+        }
+
         const body = await parseJsonBodyOrRespond(req, res);
         if (body === null) return;
         const provider = await prisma.marketplaceProvider.findUnique({ where: { slug: sanitize(body.providerSlug, 50) } });
         if (!provider) return jsonResponse(res, 400, { error: "Provider not found" });
         const account = await prisma.marketplaceAccount.upsert({
           where: { userId_marketplaceProviderId: { userId: uid, marketplaceProviderId: provider.id } },
-          create: { userId: uid, marketplaceProviderId: provider.id, providerUserId: body.providerUserId || `user-${uid.slice(0, 8)}`, accessToken: "placeholder-encrypted-token", isActive: true },
+          create: {
+            userId: uid,
+            marketplaceProviderId: provider.id,
+            providerUserId: body.providerUserId || `user-${uid.slice(0, 8)}`,
+            accessToken: crypto.randomBytes(32).toString("hex"),
+            isActive: true,
+          },
           update: { isActive: true },
+          select: marketplaceAccountResponseSelect,
         });
-        return jsonResponse(res, 201, { account });
+        return jsonResponse(res, 201, { account: buildMarketplaceAccountResponse(account) });
       }
     }
 

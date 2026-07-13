@@ -1,7 +1,7 @@
 # Progress
 
 ## Current Status
-**Phase 7 - BullMQ Worker Integrated and Frontend Publication** (complete, with auth/config hardening and expanded security assessment updates on 2026-07-10)
+**Phase 7 - BullMQ Worker Integrated and Frontend Publication** (complete, with auth/config hardening and expanded security assessment updates through 2026-07-13)
 
 BullMQ worker processes publication jobs from the Redis queue on port 6739. The API pushes publication jobs to the queue instead of using `setTimeout` mocks. The current runtime stack uses plain Node.js servers for API, web, and worker, with HttpOnly cookie auth backed by JWT signing, SMTP account activation emails, DB-backed login lockout after 5 failed attempts, 6-digit reset codes, stronger password validation across registration and reset flows, and fail-fast runtime config validation shared from `packages/config`.
 
@@ -22,7 +22,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
-### Backend API (`apps/api/db-server.js`) v0.4.1
+### Backend API (`apps/api/db-server.js`) v0.4.2
 - [x] `POST /auth/register` - creates inactive accounts, generates activation tokens, sends activation email, and returns activation-required messaging
 - [x] `GET /auth/activate` - validates activation link, activates account, and renders an HTML confirmation page
 - [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
@@ -45,6 +45,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Email validation (regex), strong password validation (min 8, uppercase, lowercase, number, special character), reset code validation, and input sanitization
 - [x] JSON request bodies are now capped in-memory, with a 1 MB default limit and a dedicated higher cap for `/media/upload`
 - [x] Pretty JSON responses (2-space indent)
+- [x] Marketplace-account browser responses use an explicit safe DTO that excludes provider user identifiers, access tokens, refresh tokens, and token-expiry metadata; mock account linking is development-only until official OAuth is implemented
 
 ### Worker (`apps/worker/worker.js`)
 - [x] BullMQ Worker processing `publication` queue
@@ -93,6 +94,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `.env` git-ignored, `.env.example` has placeholders only
 - [x] Local ZAP/Burp security assessment completed against the active Docker runtime, with artifacts stored under `security-reports/2026-07-10-zap-burp/`
 - [x] Local Trivy, Semgrep, Gitleaks, and Skipfish assessment completed, extending the same report set with runtime image, dependency, secret, and legacy crawler coverage
+- [x] Security patch `0.4.2` removes provider credential exposure from marketplace-account API responses and prevents mock provider-account linking in production
 
 ## Pending (Next Steps)
 
@@ -172,3 +174,4 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-10 | `/media-files` and auth cross-origin behavior were tightened, SMTP certificate validation was restored, and app containers now run as non-root with healthchecks | Closes the main medium-severity findings from the 2026-07-10 local assessment and stabilizes Docker runtime startup |
 | 2026-07-10 | Controlled dependency pass updated the runtime to `0.4.1` and produced a clean `pnpm audit --json` report | Removes known npm advisory findings without blind version bumps and keeps the repo aligned with verified official versions |
 | 2026-07-10 | Runtime images now use multi-stage `pnpm deploy` packaging and compiled config loading instead of runtime `tsx` | Cuts final Docker image size substantially while keeping fail-fast config validation and healthchecked non-root containers |
+| 2026-07-13 | Marketplace-account API responses use a safe DTO and mock linking is limited to development | Prevents future provider credentials from reaching browser clients and stops production from creating mock marketplace accounts before official OAuth exists |

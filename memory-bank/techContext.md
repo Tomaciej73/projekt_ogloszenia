@@ -45,6 +45,10 @@ All dependency versions must follow the project policy defined in `.clinerules/0
 6. Do not use `latest` Docker tags for production-oriented configuration.
 7. Document checked dates and source types here.
 
+## Application Version
+
+- `0.4.2` (2026-07-13) - PATCH security release. Marketplace-account API responses now use an explicit credential-safe DTO, and mock account linking is restricted to the development runtime until official provider OAuth flows are implemented.
+
 ## Verified Versions
 
 Checked 2026-07-10 via official Node.js / npm registry / Docker Hub sources.

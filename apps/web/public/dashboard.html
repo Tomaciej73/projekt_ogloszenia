@@ -174,14 +174,7 @@
       btn.textContent = 'Publishing...';
 
       try {
-        // First connect the account if not already connected
-        await apiFetch('/marketplace-accounts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ providerSlug }),
-        }, { auth: true });
-
-        // Create publication job
+        // Create a publication job only for an already connected provider account.
         const res = await apiFetch('/publication-jobs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
