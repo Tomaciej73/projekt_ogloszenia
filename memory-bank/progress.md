@@ -23,7 +23,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
-### Backend API (`apps/api/db-server.js`) v0.4.5
+### Backend API (`apps/api/db-server.js`) v0.4.6
 - [x] `POST /auth/register` - creates inactive accounts, generates activation tokens, sends activation email, and returns activation-required messaging
 - [x] `GET /auth/activate` - validates activation link, activates account, and renders an HTML confirmation page
 - [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
@@ -79,6 +79,9 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Account lockout after 5 failed login attempts, cleared only by successful password reset
 - [x] One-time 6-digit password reset codes with 1-hour expiry and DB-backed hashed persistence
 - [x] Auth abuse protection via configurable rate limiting on `/auth/*` and a DB-backed forgot-password resend cooldown
+- [x] Per-user Redis rate limits for uploads and publication requests, plus transaction-locked quotas for listings, active publication jobs, and server-recorded media storage
+- [x] Worker publication concurrency and throughput limits are configurable and default to 2 concurrent jobs / 30 jobs per minute
+- [x] Active API and worker write secret-safe `AuditLog` records for registration/activation/login, password reset, marketplace link/unlink, listing status changes, media upload, and publication lifecycle transitions
 - [x] Protected API routes now verify that the authenticated user still exists in PostgreSQL, so stale cookies after a DB reset are cleared with `401` instead of crashing `/auth/me`
 - [x] Active session list with single/all-other session revocation; password reset invalidates all sessions through `sessionVersion` and DB revocation
 - [x] SMTP startup verification plus delivery-result logging to separate relay acceptance from inbox-side deliverability issues

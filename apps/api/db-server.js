@@ -21,6 +21,7 @@ const {
 } = require("./password-security");
 const { sendPasswordResetEmail, sendAccountActivationEmail, formatMailDeliveryResult } = require("./mail");
 const { APP_VERSION } = require("@multiportal/config/app-version");
+const { sanitizeAuditMetadata } = require("@multiportal/shared/audit-metadata");
 
 const REDIS_URL = config.REDIS_URL;
 const publicationQueue = new Queue("publication", { connection: { url: REDIS_URL } });
@@ -70,6 +71,13 @@ const AUTH_RESET_PASSWORD_RATE_LIMIT_MAX_REQUESTS = config.AUTH_RESET_PASSWORD_R
 const AUTH_ACTIVATE_RATE_LIMIT_WINDOW_MS = config.AUTH_ACTIVATE_RATE_LIMIT_WINDOW_MS;
 const AUTH_ACTIVATE_RATE_LIMIT_MAX_REQUESTS = config.AUTH_ACTIVATE_RATE_LIMIT_MAX_REQUESTS;
 const AUTH_PASSWORD_RESET_RESEND_COOLDOWN_MS = config.AUTH_PASSWORD_RESET_RESEND_COOLDOWN_MS;
+const USER_STORAGE_QUOTA_BYTES = config.USER_STORAGE_QUOTA_BYTES;
+const USER_MAX_LISTINGS = config.USER_MAX_LISTINGS;
+const USER_MAX_ACTIVE_PUBLICATION_JOBS = config.USER_MAX_ACTIVE_PUBLICATION_JOBS;
+const UPLOAD_RATE_LIMIT_WINDOW_MS = config.UPLOAD_RATE_LIMIT_WINDOW_MS;
+const UPLOAD_RATE_LIMIT_MAX_REQUESTS = config.UPLOAD_RATE_LIMIT_MAX_REQUESTS;
+const PUBLICATION_RATE_LIMIT_WINDOW_MS = config.PUBLICATION_RATE_LIMIT_WINDOW_MS;
+const PUBLICATION_RATE_LIMIT_MAX_REQUESTS = config.PUBLICATION_RATE_LIMIT_MAX_REQUESTS;
 
 class RequestBodyTooLargeError extends Error {
   constructor(limitBytes) {
@@ -296,6 +304,15 @@ async function validateNewPassword(password) {
   return null;
 }
 
+class ResourceQuotaExceededError extends Error {
+  constructor(resource, limit) {
+    super(`${resource} quota reached.`);
+    this.name = "ResourceQuotaExceededError";
+    this.resource = resource;
+    this.limit = limit;
+  }
+}
+
 function normalizeResetCode(code) {
   if (code === undefined || code === null) return "";
   return String(code).replace(/\s+/g, "").trim();
@@ -413,10 +430,10 @@ function unwrapRedisMultiValue(entry) {
   return entry;
 }
 
-async function consumeAuthRateLimit(key, { windowMs, maxRequests }) {
+async function consumeRateLimit(namespace, key, { windowMs, maxRequests }) {
   const now = Date.now();
   const redisClient = await publicationQueueRedisClientPromise;
-  const redisKey = `auth:ratelimit:${key}`;
+  const redisKey = `${namespace}:ratelimit:${key}`;
   const multiResult = await redisClient
     .multi()
     .incr(redisKey)
@@ -428,7 +445,7 @@ async function consumeAuthRateLimit(key, { windowMs, maxRequests }) {
   let ttlMs = Number(unwrapRedisMultiValue(multiResult?.[2]));
 
   if (!Number.isFinite(count) || count < 1) {
-    throw new Error(`Redis returned an invalid auth rate limit counter for key ${redisKey}.`);
+    throw new Error(`Redis returned an invalid ${namespace} rate limit counter for key ${redisKey}.`);
   }
 
   if (!Number.isFinite(ttlMs) || ttlMs < 1) {
@@ -444,6 +461,10 @@ async function consumeAuthRateLimit(key, { windowMs, maxRequests }) {
     resetAt,
     retryAfterSeconds: Math.max(1, Math.ceil(ttlMs / 1000)),
   };
+}
+
+async function consumeAuthRateLimit(key, options) {
+  return consumeRateLimit("auth", key, options);
 }
 
 function buildRateLimitHeaders(result) {
@@ -476,9 +497,72 @@ async function enforceAuthRateLimitOrRespond(req, res, { key, windowMs, maxReque
   }
 }
 
+async function enforceResourceRateLimitOrRespond(req, res, { key, windowMs, maxRequests, error }) {
+  try {
+    const result = await consumeRateLimit("resource", key, { windowMs, maxRequests });
+    if (result.allowed) {
+      return true;
+    }
+
+    jsonResponse(res, 429, { error, retryAfterSeconds: result.retryAfterSeconds }, buildRateLimitHeaders(result));
+    return false;
+  } catch (rateLimitError) {
+    console.error("Resource rate limit backend failed:", rateLimitError.message);
+    jsonResponse(res, 503, {
+      error: "Resource protection is temporarily unavailable. Please try again in a moment.",
+    }, {
+      "Retry-After": "5",
+      "Cache-Control": "no-store",
+    });
+    return false;
+  }
+}
+
 function getRemainingCooldownMs(dateValue, cooldownMs) {
   if (!(dateValue instanceof Date)) return 0;
   return Math.max(0, dateValue.getTime() + cooldownMs - Date.now());
+}
+
+async function lockUserResources(tx, userId) {
+  // executeRaw avoids deserializing PostgreSQL's void advisory-lock result.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${userId}))`;
+}
+
+async function getUserStoredMediaBytes(tx, userId) {
+  const aggregate = await tx.listingMedia.aggregate({
+    where: { listingDraft: { userId } },
+    _sum: { fileSize: true },
+  });
+  return Number(aggregate?._sum?.fileSize || 0);
+}
+
+async function writeAuditLog(db, { userId, action, entityType, entityId, metadata = {} }) {
+  if (!userId || !action || !entityType || !entityId) {
+    throw new Error("Audit records require user, action, entity type, and entity ID.");
+  }
+
+  return db.auditLog.create({
+    data: {
+      userId,
+      action,
+      entityType,
+      entityId,
+      metadata: sanitizeAuditMetadata(metadata) || {},
+    },
+  });
+}
+
+function respondResourceQuotaExceeded(res, error) {
+  const labels = {
+    listings: "listing",
+    storage: "storage",
+    publication_jobs: "active publication job",
+  };
+  return jsonResponse(res, 409, {
+    error: `Your ${labels[error.resource] || "resource"} quota has been reached. Remove unused data or try again later.`,
+    resource: error.resource,
+    limit: error.limit,
+  }, { "Cache-Control": "no-store" });
 }
 
 function buildActivationUrl(req, email, token) {
@@ -545,6 +629,10 @@ function normalizeListingResponse(req, listing) {
         .filter(Boolean)
       : listing.media,
   };
+}
+
+async function consumeAuthRateLimit(key, options) {
+  return consumeRateLimit("auth", key, options);
 }
 
 async function findOwnedMediaMetadata(userId, key) {
@@ -789,14 +877,24 @@ function normalizeSessionUserAgent(req) {
 
 async function createAuthenticatedSession(user, req) {
   const expiresAt = new Date(Date.now() + AUTH_COOKIE_MAX_AGE_SECONDS * 1000);
-  const session = await prisma.authSession.create({
-    data: {
-      id: crypto.randomUUID(),
+  const session = await prisma.$transaction(async (tx) => {
+    const createdSession = await tx.authSession.create({
+      data: {
+        id: crypto.randomUUID(),
+        userId: user.id,
+        expiresAt,
+        userAgent: normalizeSessionUserAgent(req),
+      },
+      select: { id: true },
+    });
+    await writeAuditLog(tx, {
       userId: user.id,
-      expiresAt,
-      userAgent: normalizeSessionUserAgent(req),
-    },
-    select: { id: true },
+      action: "login_succeeded",
+      entityType: "AuthSession",
+      entityId: createdSession.id,
+      metadata: { authMethod: "password" },
+    });
+    return createdSession;
   });
 
   return signToken(user.id, session.id, user.sessionVersion);
@@ -1206,18 +1304,28 @@ const server = http.createServer(async (req, res) => {
       const activationTokenHash = hashActivationToken(activationToken);
       const activationTokenExpiresAt = new Date(Date.now() + ACTIVATION_EXPIRY_MS);
 
-      const user = await prisma.user.create({
-        data: {
-          email,
-          passwordHash: hashPassword(body.password),
-          name,
-          isActive: false,
-          activationTokenHash,
-          activationTokenExpiresAt,
-        },
-      });
-      await prisma.workspace.create({
-        data: { name: `${name}'s Workspace`, slug: `ws-${user.id.slice(0, 8)}`, members: { create: { userId: user.id, role: "owner" } } },
+      const user = await prisma.$transaction(async (tx) => {
+        const createdUser = await tx.user.create({
+          data: {
+            email,
+            passwordHash: hashPassword(body.password),
+            name,
+            isActive: false,
+            activationTokenHash,
+            activationTokenExpiresAt,
+          },
+        });
+        await tx.workspace.create({
+          data: { name: `${name}'s Workspace`, slug: `ws-${createdUser.id.slice(0, 8)}`, members: { create: { userId: createdUser.id, role: "owner" } } },
+        });
+        await writeAuditLog(tx, {
+          userId: createdUser.id,
+          action: "account_registered",
+          entityType: "User",
+          entityId: createdUser.id,
+          metadata: { activationRequired: true },
+        });
+        return createdUser;
       });
       await seedProviders();
 
@@ -1443,14 +1551,23 @@ const server = http.createServer(async (req, res) => {
         }));
       }
 
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          isActive: true,
-          activatedAt: new Date(),
-          activationTokenHash: null,
-          activationTokenExpiresAt: null,
-        },
+      await prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { id: user.id },
+          data: {
+            isActive: true,
+            activatedAt: new Date(),
+            activationTokenHash: null,
+            activationTokenExpiresAt: null,
+          },
+        });
+        await writeAuditLog(tx, {
+          userId: user.id,
+          action: "account_activated",
+          entityType: "User",
+          entityId: user.id,
+          metadata: { activationMethod: "email_link" },
+        });
       });
 
       return htmlResponse(res, 200, renderAuthStatusPage({
@@ -1508,14 +1625,23 @@ const server = http.createServer(async (req, res) => {
 
       const resetCode = generateResetCode();
       const passwordResetCodeExpiresAt = new Date(Date.now() + RESET_EXPIRY_MS);
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          passwordResetCodeHash: hashResetCode(user.id, resetCode),
-          passwordResetCodeExpiresAt,
-          passwordResetRequestedAt: new Date(),
-          passwordResetAttempts: 0,
-        },
+      await prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { id: user.id },
+          data: {
+            passwordResetCodeHash: hashResetCode(user.id, resetCode),
+            passwordResetCodeExpiresAt,
+            passwordResetRequestedAt: new Date(),
+            passwordResetAttempts: 0,
+          },
+        });
+        await writeAuditLog(tx, {
+          userId: user.id,
+          action: "password_reset_requested",
+          entityType: "User",
+          entityId: user.id,
+          metadata: { activationRecovery: !user.isActive, unlockRecovery: Boolean(user.lockedAt) },
+        });
       });
 
       // Send password reset email via SMTP
@@ -1650,6 +1776,17 @@ const server = http.createServer(async (req, res) => {
         await tx.authSession.updateMany({
           where: { userId: user.id, revokedAt: null },
           data: { revokedAt: passwordResetAt },
+        });
+        await writeAuditLog(tx, {
+          userId: user.id,
+          action: "password_reset_completed",
+          entityType: "User",
+          entityId: user.id,
+          metadata: {
+            sessionsRevoked: true,
+            accountActivated: !user.isActive,
+            accountUnlocked: Boolean(user.lockedAt),
+          },
         });
       });
 
@@ -1798,18 +1935,45 @@ const server = http.createServer(async (req, res) => {
         if (!title) return jsonResponse(res, 400, { error: "Title is required." });
         if (photoUrlsErr) return jsonResponse(res, 400, { error: photoUrlsErr });
 
-        const ws = await prisma.workspace.findFirst({ where: { members: { some: { userId: uid } } } });
-        if (!ws) return jsonResponse(res, 400, { error: "No workspace found. Please register first." });
+        let listing;
+        try {
+          listing = await prisma.$transaction(async (tx) => {
+            await lockUserResources(tx, uid);
+            const listingCount = await tx.listingDraft.count({ where: { userId: uid } });
+            if (listingCount >= USER_MAX_LISTINGS) {
+              throw new ResourceQuotaExceededError("listings", USER_MAX_LISTINGS);
+            }
 
-        const listing = await prisma.listingDraft.create({
-          data: {
-            title, description, price: Number(body.price) || 0,
-            currency: body.currency || "PLN", category: category || "Other",
-            attributes: body.attributes || {}, location: body.location || {},
-            photoUrls, deliveryOptions: body.deliveryOptions || [],
-            userId: uid, workspaceId: ws.id,
-          },
-        });
+            const ws = await tx.workspace.findFirst({ where: { members: { some: { userId: uid } } } });
+            if (!ws) throw new Error("Workspace not found for authenticated user.");
+
+            const createdListing = await tx.listingDraft.create({
+              data: {
+                title, description, price: Number(body.price) || 0,
+                currency: body.currency || "PLN", category: category || "Other",
+                attributes: body.attributes || {}, location: body.location || {},
+                photoUrls, deliveryOptions: body.deliveryOptions || [],
+                userId: uid, workspaceId: ws.id,
+              },
+            });
+            await writeAuditLog(tx, {
+              userId: uid,
+              action: "listing_created",
+              entityType: "ListingDraft",
+              entityId: createdListing.id,
+              metadata: { status: createdListing.status },
+            });
+            return createdListing;
+          });
+        } catch (error) {
+          if (error instanceof ResourceQuotaExceededError) {
+            return respondResourceQuotaExceeded(res, error);
+          }
+          if (error?.message === "Workspace not found for authenticated user.") {
+            return jsonResponse(res, 400, { error: "No workspace found. Please register first." });
+          }
+          throw error;
+        }
         return jsonResponse(res, 201, { listing: normalizeListingResponse(req, listing) });
       }
     }
@@ -1828,6 +1992,8 @@ const server = http.createServer(async (req, res) => {
           : jsonResponse(res, 404, { error: "Listing not found" });
       }
       if (req.method === "PUT") {
+        const existingListing = await prisma.listingDraft.findFirst({ where: { id, userId: uid } });
+        if (!existingListing) return jsonResponse(res, 404, { error: "Listing not found" });
         const body = await parseJsonBodyOrRespond(req, res);
         if (body === null) return;
         if (body.title !== undefined) body.title = sanitize(body.title, TITLE_MAX);
@@ -1838,13 +2004,58 @@ const server = http.createServer(async (req, res) => {
           if (photoUrlsErr) return jsonResponse(res, 400, { error: photoUrlsErr });
           body.photoUrls = photoUrls;
         }
-        const listing = await prisma.listingDraft.update({ where: { id, userId: uid }, data: body });
+        const listing = await prisma.$transaction(async (tx) => {
+          const updatedListing = await tx.listingDraft.update({ where: { id }, data: body });
+          if (body.status !== undefined && body.status !== existingListing.status) {
+            await writeAuditLog(tx, {
+              userId: uid,
+              action: "listing_status_changed",
+              entityType: "ListingDraft",
+              entityId: id,
+              metadata: { from: existingListing.status, to: updatedListing.status },
+            });
+          } else {
+            await writeAuditLog(tx, {
+              userId: uid,
+              action: "listing_updated",
+              entityType: "ListingDraft",
+              entityId: id,
+              metadata: {},
+            });
+          }
+          return updatedListing;
+        });
         return jsonResponse(res, 200, { listing: normalizeListingResponse(req, listing) });
       }
       if (req.method === "DELETE") {
-        // Delete related media first to avoid RESTRICT foreign key violation
-        await prisma.listingMedia.deleteMany({ where: { listingDraftId: id } });
-        await prisma.listingDraft.delete({ where: { id, userId: uid } });
+        const listing = await prisma.listingDraft.findFirst({
+          where: { id, userId: uid },
+          include: { media: { select: { key: true } } },
+        });
+        if (!listing) return jsonResponse(res, 404, { error: "Listing not found" });
+
+        try {
+          await ensureBucket();
+          for (const media of listing.media) {
+            await minioClient.removeObject(BUCKET, media.key);
+          }
+        } catch (mediaDeletionError) {
+          console.error("Listing media cleanup failed:", mediaDeletionError.message);
+          return jsonResponse(res, 503, { error: "Unable to remove listing media safely. Please try again later." });
+        }
+
+        await prisma.$transaction(async (tx) => {
+          // Delete related media first to avoid RESTRICT foreign key violation.
+          await tx.listingMedia.deleteMany({ where: { listingDraftId: id } });
+          await tx.listingDraft.delete({ where: { id } });
+          await writeAuditLog(tx, {
+            userId: uid,
+            action: "listing_deleted",
+            entityType: "ListingDraft",
+            entityId: id,
+            metadata: { removedMediaCount: listing.media.length },
+          });
+        });
         return jsonResponse(res, 200, { deleted: true, id });
       }
     }
@@ -1900,6 +2111,15 @@ const server = http.createServer(async (req, res) => {
       const currentUser = await requireAuthenticatedUser(req, res);
       if (!currentUser) return;
       const uid = currentUser.id;
+      const publicationRateLimitKey = buildRateLimitKey(["publication", "user", uid]);
+      if (!await enforceResourceRateLimitOrRespond(req, res, {
+        key: publicationRateLimitKey,
+        windowMs: PUBLICATION_RATE_LIMIT_WINDOW_MS,
+        maxRequests: PUBLICATION_RATE_LIMIT_MAX_REQUESTS,
+        error: "Too many publication requests. Please try again later.",
+      })) {
+        return;
+      }
       const body = await parseJsonBodyOrRespond(req, res);
       if (body === null) return;
       if (!body.listingId || typeof body.listingId !== "string") {
@@ -1907,10 +2127,24 @@ const server = http.createServer(async (req, res) => {
       }
       const draft = await prisma.listingDraft.findFirst({ where: { id: body.listingId, userId: uid } });
       if (!draft) return jsonResponse(res, 404, { error: "Listing not found" });
-      const account = await prisma.marketplaceAccount.findFirst({ where: { userId: uid }, include: { marketplaceProvider: true } });
+      const account = await prisma.marketplaceAccount.findFirst({ where: { userId: uid, isActive: true }, include: { marketplaceProvider: true } });
       if (!account) return jsonResponse(res, 400, { error: "No connected marketplace account." });
       const key = crypto.randomUUID();
-      const { extListing, job } = await prisma.$transaction(async (tx) => {
+      let extListing;
+      let job;
+      try {
+        ({ extListing, job } = await prisma.$transaction(async (tx) => {
+          await lockUserResources(tx, uid);
+          const activeJobCount = await tx.publicationJob.count({
+            where: {
+              listingDraft: { userId: uid },
+              status: { in: ["pending", "processing", "retrying"] },
+            },
+          });
+          if (activeJobCount >= USER_MAX_ACTIVE_PUBLICATION_JOBS) {
+            throw new ResourceQuotaExceededError("publication_jobs", USER_MAX_ACTIVE_PUBLICATION_JOBS);
+          }
+
         const extListing = await tx.externalListing.upsert({
           where: {
             listingDraftId_marketplaceProviderId: {
@@ -1934,8 +2168,22 @@ const server = http.createServer(async (req, res) => {
           data: { idempotencyKey: key, listingDraftId: draft.id, marketplaceAccountId: account.id, externalListingId: extListing.id, status: "pending" },
         });
 
+        await writeAuditLog(tx, {
+          userId: uid,
+          action: "publication_queued",
+          entityType: "PublicationJob",
+          entityId: job.id,
+          metadata: { listingId: draft.id, status: "pending" },
+        });
+
         return { extListing, job };
-      });
+        }));
+      } catch (error) {
+        if (error instanceof ResourceQuotaExceededError) {
+          return respondResourceQuotaExceeded(res, error);
+        }
+        throw error;
+      }
 
       // Push to BullMQ queue instead of setTimeout — worker will process async
       await publicationQueue.add("publish", {
@@ -1976,11 +2224,20 @@ const server = http.createServer(async (req, res) => {
       const currentUser = await requireAuthenticatedUser(req, res);
       if (!currentUser) return;
       const uid = currentUser.id;
+      const uploadRateLimitKey = buildRateLimitKey(["upload", "user", uid]);
+      if (!await enforceResourceRateLimitOrRespond(req, res, {
+        key: uploadRateLimitKey,
+        windowMs: UPLOAD_RATE_LIMIT_WINDOW_MS,
+        maxRequests: UPLOAD_RATE_LIMIT_MAX_REQUESTS,
+        error: "Too many uploads. Please try again later.",
+      })) {
+        return;
+      }
 
       const body = await parseJsonBodyOrRespond(req, res, { limitBytes: UPLOAD_JSON_BODY_LIMIT_BYTES });
       if (body === null) return;
-      if (!body.fileName || !body.data) {
-        return jsonResponse(res, 400, { error: "fileName and data (base64) are required." });
+      if (!body.fileName || !body.data || !body.listingId || typeof body.listingId !== "string") {
+        return jsonResponse(res, 400, { error: "fileName, data (base64), and listingId are required." });
       }
 
       const uploadedImage = validateUploadedImage(body);
@@ -1988,10 +2245,8 @@ const server = http.createServer(async (req, res) => {
         return jsonResponse(res, 400, { error: uploadedImage.error });
       }
 
-      const listing = body.listingId
-        ? await prisma.listingDraft.findFirst({ where: { id: body.listingId, userId: uid } })
-        : null;
-      if (body.listingId && !listing) {
+      const listing = await prisma.listingDraft.findFirst({ where: { id: body.listingId, userId: uid } });
+      if (!listing) {
         return jsonResponse(res, 404, { error: "Listing not found" });
       }
 
@@ -1999,22 +2254,48 @@ const server = http.createServer(async (req, res) => {
       const proxyPublicUrl = buildMediaPublicUrl(req, key);
 
       await ensureBucket();
-      await minioClient.putObject(BUCKET, key, uploadedImage.buffer, uploadedImage.buffer.length, {
-        "Content-Type": uploadedImage.mimeType,
-      });
+      let objectWritten = false;
+      try {
+        await prisma.$transaction(async (tx) => {
+          await lockUserResources(tx, uid);
+          const usedBytes = await getUserStoredMediaBytes(tx, uid);
+          if (usedBytes + uploadedImage.buffer.length > USER_STORAGE_QUOTA_BYTES) {
+            throw new ResourceQuotaExceededError("storage", USER_STORAGE_QUOTA_BYTES);
+          }
 
-      // Record media if listingId is provided.
-      if (listing) {
-        await prisma.listingMedia.create({
-          data: {
-            url: proxyPublicUrl,
-            key,
-            fileName: uploadedImage.fileName,
-            fileSize: uploadedImage.buffer.length,
-            mimeType: uploadedImage.mimeType,
-            listingDraftId: body.listingId,
-          },
+          await minioClient.putObject(BUCKET, key, uploadedImage.buffer, uploadedImage.buffer.length, {
+            "Content-Type": uploadedImage.mimeType,
+          });
+          objectWritten = true;
+
+          const media = await tx.listingMedia.create({
+            data: {
+              url: proxyPublicUrl,
+              key,
+              fileName: uploadedImage.fileName,
+              fileSize: uploadedImage.buffer.length,
+              mimeType: uploadedImage.mimeType,
+              listingDraftId: listing.id,
+            },
+          });
+          await writeAuditLog(tx, {
+            userId: uid,
+            action: "media_uploaded",
+            entityType: "ListingMedia",
+            entityId: media.id,
+            metadata: { listingId: listing.id, bytes: uploadedImage.buffer.length, mimeType: uploadedImage.mimeType },
+          });
         });
+      } catch (error) {
+        if (objectWritten) {
+          await minioClient.removeObject(BUCKET, key).catch((cleanupError) => {
+            console.error("Failed to remove untracked media after upload error:", cleanupError.message);
+          });
+        }
+        if (error instanceof ResourceQuotaExceededError) {
+          return respondResourceQuotaExceeded(res, error);
+        }
+        throw error;
       }
 
       return jsonResponse(res, 201, { publicUrl: proxyPublicUrl, key });
@@ -2025,6 +2306,40 @@ const server = http.createServer(async (req, res) => {
       return jsonResponse(res, 200, { providers: await prisma.marketplaceProvider.findMany() });
 
     // ── Marketplace Accounts ──
+    const marketplaceAccountMatch = path.match(/^\/marketplace-accounts\/([^/]+)$/);
+    if (marketplaceAccountMatch && req.method === "DELETE") {
+      const currentUser = await requireAuthenticatedUser(req, res);
+      if (!currentUser) return;
+      const uid = currentUser.id;
+      const accountId = marketplaceAccountMatch[1];
+      const account = await prisma.marketplaceAccount.findFirst({
+        where: { id: accountId, userId: uid, isActive: true },
+        select: { id: true },
+      });
+      if (!account) return jsonResponse(res, 404, { error: "Active marketplace account not found." });
+
+      await prisma.$transaction(async (tx) => {
+        await tx.marketplaceAccount.update({
+          where: { id: account.id },
+          data: {
+            isActive: false,
+            providerUserId: null,
+            accessToken: crypto.randomBytes(32).toString("hex"),
+            refreshToken: null,
+            tokenExpiresAt: null,
+          },
+        });
+        await writeAuditLog(tx, {
+          userId: uid,
+          action: "marketplace_account_unlinked",
+          entityType: "MarketplaceAccount",
+          entityId: account.id,
+          metadata: {},
+        });
+      });
+      return jsonResponse(res, 200, { disconnected: true, id: account.id });
+    }
+
     if (path === "/marketplace-accounts") {
       const currentUser = await requireAuthenticatedUser(req, res);
       if (!currentUser) return;
@@ -2049,17 +2364,27 @@ const server = http.createServer(async (req, res) => {
         if (body === null) return;
         const provider = await prisma.marketplaceProvider.findUnique({ where: { slug: sanitize(body.providerSlug, 50) } });
         if (!provider) return jsonResponse(res, 400, { error: "Provider not found" });
-        const account = await prisma.marketplaceAccount.upsert({
-          where: { userId_marketplaceProviderId: { userId: uid, marketplaceProviderId: provider.id } },
-          create: {
+        const account = await prisma.$transaction(async (tx) => {
+          const linkedAccount = await tx.marketplaceAccount.upsert({
+            where: { userId_marketplaceProviderId: { userId: uid, marketplaceProviderId: provider.id } },
+            create: {
+              userId: uid,
+              marketplaceProviderId: provider.id,
+              providerUserId: body.providerUserId || `user-${uid.slice(0, 8)}`,
+              accessToken: crypto.randomBytes(32).toString("hex"),
+              isActive: true,
+            },
+            update: { isActive: true },
+            select: marketplaceAccountResponseSelect,
+          });
+          await writeAuditLog(tx, {
             userId: uid,
-            marketplaceProviderId: provider.id,
-            providerUserId: body.providerUserId || `user-${uid.slice(0, 8)}`,
-            accessToken: crypto.randomBytes(32).toString("hex"),
-            isActive: true,
-          },
-          update: { isActive: true },
-          select: marketplaceAccountResponseSelect,
+            action: "marketplace_account_linked",
+            entityType: "MarketplaceAccount",
+            entityId: linkedAccount.id,
+            metadata: { provider: provider.slug, mode: "development_mock" },
+          });
+          return linkedAccount;
         });
         return jsonResponse(res, 201, { account: buildMarketplaceAccountResponse(account) });
       }

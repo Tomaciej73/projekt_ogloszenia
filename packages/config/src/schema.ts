@@ -145,6 +145,21 @@ export const passwordSecurityEnvSchema = z.object({
   PASSWORD_BREACH_CHECK_TIMEOUT_MS: defaultedIntegerFromEnvSchema(3000),
 });
 
+export const resourceLimitEnvSchema = z.object({
+  USER_STORAGE_QUOTA_BYTES: defaultedIntegerFromEnvSchema(512 * 1024 * 1024),
+  USER_MAX_LISTINGS: defaultedIntegerFromEnvSchema(1000),
+  USER_MAX_ACTIVE_PUBLICATION_JOBS: defaultedIntegerFromEnvSchema(25),
+  UPLOAD_RATE_LIMIT_WINDOW_MS: defaultedIntegerFromEnvSchema(60_000),
+  UPLOAD_RATE_LIMIT_MAX_REQUESTS: defaultedIntegerFromEnvSchema(20),
+  PUBLICATION_RATE_LIMIT_WINDOW_MS: defaultedIntegerFromEnvSchema(60_000),
+  PUBLICATION_RATE_LIMIT_MAX_REQUESTS: defaultedIntegerFromEnvSchema(10),
+});
+
+export const workerPublicationEnvSchema = z.object({
+  WORKER_PUBLICATION_CONCURRENCY: defaultedIntegerFromEnvSchema(2),
+  WORKER_PUBLICATION_MAX_JOBS_PER_MINUTE: defaultedIntegerFromEnvSchema(30),
+});
+
 export const smtpEnvSchema = z.object({
   SMTP_HOST: requiredStringSchema,
   SMTP_PORT: integerFromEnvSchema,
@@ -193,12 +208,16 @@ export const apiRuntimeEnvSchema = baseRuntimeEnvSchema
   .merge(authEnvSchema)
   .merge(authRateLimitEnvSchema)
   .merge(passwordSecurityEnvSchema)
+  .merge(resourceLimitEnvSchema)
   .merge(smtpEnvSchema)
   .merge(appPortsEnvSchema)
   .merge(publicUrlEnvSchema)
   .merge(providerOAuthEnvSchema);
 
-export const workerRuntimeEnvSchema = baseRuntimeEnvSchema.merge(redisEnvSchema);
+export const workerRuntimeEnvSchema = baseRuntimeEnvSchema
+  .merge(databaseEnvSchema)
+  .merge(redisEnvSchema)
+  .merge(workerPublicationEnvSchema);
 
 export const webRuntimeEnvSchema = baseRuntimeEnvSchema.merge(webProxyEnvSchema);
 
@@ -213,6 +232,8 @@ export type StorageConfig = z.infer<typeof storageEnvSchema>;
 export type AuthConfig = z.infer<typeof authEnvSchema>;
 export type AuthRateLimitConfig = z.infer<typeof authRateLimitEnvSchema>;
 export type PasswordSecurityConfig = z.infer<typeof passwordSecurityEnvSchema>;
+export type ResourceLimitConfig = z.infer<typeof resourceLimitEnvSchema>;
+export type WorkerPublicationConfig = z.infer<typeof workerPublicationEnvSchema>;
 export type SmtpConfig = z.infer<typeof smtpEnvSchema>;
 export type ProviderOAuthConfig = z.infer<typeof providerOAuthEnvSchema>;
 export type AppPortsConfig = z.infer<typeof appPortsEnvSchema>;

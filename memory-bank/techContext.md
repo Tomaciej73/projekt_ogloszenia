@@ -128,6 +128,8 @@ Key `.env` groups:
 - **Web proxy:** `API_PROXY_URL`
 - **Auth:** `JWT_SECRET`, `SESSION_SECRET`, `CSRF_SECRET`
 - **Password breach checks:** `PASSWORD_BREACH_CHECK_ENABLED`, `PASSWORD_BREACH_CHECK_FAIL_CLOSED`, `PASSWORD_BREACH_CHECK_URL`, `PASSWORD_BREACH_CHECK_TIMEOUT_MS`
+- **Resource limits:** `USER_STORAGE_QUOTA_BYTES`, `USER_MAX_LISTINGS`, `USER_MAX_ACTIVE_PUBLICATION_JOBS`, `UPLOAD_RATE_LIMIT_WINDOW_MS`, `UPLOAD_RATE_LIMIT_MAX_REQUESTS`, `PUBLICATION_RATE_LIMIT_WINDOW_MS`, `PUBLICATION_RATE_LIMIT_MAX_REQUESTS`
+- **Worker publication limits:** `WORKER_PUBLICATION_CONCURRENCY`, `WORKER_PUBLICATION_MAX_JOBS_PER_MINUTE`
 - **Auth rate limiting:** `AUTH_RATE_LIMIT_WINDOW_MS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`, `AUTH_LOGIN_RATE_LIMIT_WINDOW_MS`, `AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS`, `AUTH_REGISTER_RATE_LIMIT_WINDOW_MS`, `AUTH_REGISTER_RATE_LIMIT_MAX_REQUESTS`, `AUTH_FORGOT_PASSWORD_RATE_LIMIT_WINDOW_MS`, `AUTH_FORGOT_PASSWORD_RATE_LIMIT_MAX_REQUESTS`, `AUTH_RESET_PASSWORD_RATE_LIMIT_WINDOW_MS`, `AUTH_RESET_PASSWORD_RATE_LIMIT_MAX_REQUESTS`, `AUTH_ACTIVATE_RATE_LIMIT_WINDOW_MS`, `AUTH_ACTIVATE_RATE_LIMIT_MAX_REQUESTS`, `AUTH_PASSWORD_RESET_RESEND_COOLDOWN_MS`
 - **SMTP:** `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`
 - **SMTP transport mode:** optional `SMTP_SECURE`, optional `SMTP_REQUIRE_TLS`, and optional temporary-debug-only `SMTP_TLS_ALLOW_INVALID_CERTS`
@@ -214,6 +216,8 @@ packages/config/
 - JSON request parsing in `apps/api/db-server.js` now enforces byte caps while reading the stream: 1 MB for normal JSON endpoints and a larger route-specific cap for `/media/upload` that matches the 10 MB decoded image limit plus base64 overhead.
 - Auth rate limit counters now live in Redis, while the forgot-password resend cooldown is persisted in PostgreSQL through the existing `User.passwordResetRequestedAt` field.
 - If Redis is unavailable, auth endpoints currently fail closed with a temporary `503` because rate limiting is treated as required security infrastructure.
+- Upload and publication rate limits likewise fail closed if Redis is unavailable. Listing, active-job, and storage quotas are checked under a transaction-scoped PostgreSQL advisory lock keyed by user ID; uploads must belong to a listing and their `ListingMedia` record is created in the same transaction as the MinIO object write.
+- The active runtime writes `AuditLog` rows transactionally with successful security-relevant actions. The shared metadata sanitizer excludes passwords, reset codes, tokens, secrets, cookies, credentials, and API/private keys; worker status changes also create `PublicationEvent` rows.
 - Runtime images are produced through multi-stage `pnpm deploy` packaging, remove the runtime `tsx` dependency, and the current dependency set passes `pnpm audit --json` with zero known npm advisories as of 2026-07-10.
 - The API Docker builder normalizes `docker-entrypoint.sh` to LF before invoking Alpine `/bin/sh`, preventing Windows CRLF checkouts from blocking `prisma migrate deploy`.
 - MFA/passkeys are not implemented yet. They require a separate WebAuthn credential model, registration/verification ceremony, recovery procedure, and product decision on mandatory versus optional enrolment.

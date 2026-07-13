@@ -17,13 +17,20 @@ COPY packages/shared/package.json packages/shared/package.json
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY apps/worker/ apps/worker/
+COPY apps/api/prisma/ apps/api/prisma/
+COPY apps/api/prisma.config.ts apps/api/prisma.config.ts
 COPY packages/ packages/
 
 RUN pnpm --filter @multiportal/config run build \
   && pnpm --filter @multiportal/shared run build \
   && pnpm --filter @multiportal/connectors run build \
+  && pnpm --filter @multiportal/worker rebuild prisma @prisma/engines esbuild \
+  && pnpm exec prisma generate --config apps/api/prisma.config.ts --schema apps/api/prisma/schema.prisma \
   && pnpm --filter @multiportal/worker deploy --prod --legacy --ignore-scripts /prod/app \
-  && pnpm --dir /prod/app --config.minimumReleaseAge=0 rebuild esbuild
+  && mkdir -p /prod/app/prisma \
+  && cp apps/api/prisma/schema.prisma /prod/app/prisma/schema.prisma \
+  && cp apps/api/prisma.config.ts /prod/app/prisma.config.ts \
+  && /prod/app/node_modules/.bin/prisma generate --config /prod/app/prisma.config.ts --schema /prod/app/prisma/schema.prisma
 
 FROM node:24.18.0-alpine
 

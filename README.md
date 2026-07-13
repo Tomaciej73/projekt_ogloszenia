@@ -184,6 +184,12 @@ The application checks new passwords through the HIBP Pwned Passwords k-anonymit
 
 Each login receives a database-backed session ID embedded in the HttpOnly JWT cookie. The account panel shows active sessions and can end one or all other sessions. A password reset revokes every previous session before the user can log in again.
 
+### Resource limits and audit trail
+
+The active API applies per-user limits to listing count, server-recorded media storage, upload frequency, active publication jobs, and publication frequency. Listing and storage quotas are checked while holding a per-user PostgreSQL transaction lock, so concurrent requests cannot bypass them. The worker has independently configurable concurrency and publication throughput limits.
+
+Security-relevant successful actions are written to `AuditLog`: account registration/activation, login, password-reset lifecycle, listing status changes, media uploads, marketplace-account linking/unlinking, and publication status changes. Metadata is allowlisted and strips password, token, secret, cookie, credential, and reset-code fields.
+
 ### Email rendering
 
 Transactional emails intentionally use an opaque, light color palette with explicit HTML `bgcolor` attributes and `color-scheme: light` metadata. This avoids the partial color inversion that can render dark-gradient email templates unreadable in clients using automatic dark mode.

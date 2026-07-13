@@ -222,6 +222,16 @@ apps/api/src/
 ### 19. Transactional Email Color-Mode Pattern
 - Email clients may partially transform CSS under automatic dark mode, so transactional templates declare `color-scheme: light` and `supported-color-schemes: light` in both HTML and metadata.
 - All essential surfaces use opaque inline `background-color` and foreground colors, plus legacy `bgcolor` attributes on the outer and card tables. Do not use transparent gradient text or translucent text colors for security-critical instructions, reset codes, or activation links.
+
+### 20. User Resource Quota Pattern
+- Per-user upload and publication request frequency is counted atomically in Redis and rejected with `429` plus standard rate-limit headers. Redis failures return `503` rather than silently removing the protection.
+- Listing count, active publication-job count, and recorded media-byte quota are checked after acquiring a transaction-scoped PostgreSQL advisory lock derived from the user ID. This serializes quota-changing operations for one user without globally locking the application.
+- Every server-side upload must reference an owned listing and creates a `ListingMedia` row; listing deletion removes the tracked MinIO objects before deleting the database rows, so quota accounting follows real retained media.
+
+### 21. Active Runtime Audit Log Pattern
+- `AuditLog` is written in the same transaction as successful account, marketplace, listing, media, and publication changes. Every row names the actor, action, entity type, entity ID, and bounded metadata.
+- Audit metadata passes through the shared sanitizer. It never records passwords, reset codes, access/refresh tokens, secrets, authorization values, cookies, credentials, or private/API keys.
+- The worker owns publication state transitions and records both `PublicationEvent` and `AuditLog` entries for processing, success, retry, and final failure.
 - The API image runs Prisma client generation during the image build and `prisma migrate deploy` during container startup using explicit Prisma config paths, avoiding working-directory ambiguity in both the builder and the pruned runtime image.
 - The API builder normalizes the entrypoint script to LF before it is executed by Alpine `/bin/sh`, so a Windows checkout cannot break migration startup through CRLF line endings.
 - App runtime images switch to the non-root `node` user and declare Docker healthchecks through `apps/api/healthcheck.js`, `apps/web/healthcheck.js`, and `apps/worker/healthcheck.js`.
