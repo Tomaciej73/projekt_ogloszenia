@@ -1,6 +1,6 @@
 {
   "name": "@multiportal/api",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "private": true,
   "description": "MultiPortal Listing Manager REST API (NestJS)",
   "scripts": {
@@ -9,7 +9,7 @@
     "start": "node db-server.js",
     "build": "nest build",
     "lint": "tsc --noEmit -p tsconfig.json && node --check db-server.js && node --check healthcheck.js && node --check mail.js && node --check marketplace-account-response.js && node --check media-access.js && node --check minio.js && node --check password-security.js && node --check runtime-config.js",
-    "test": "pnpm run lint && node --test marketplace-account-response.test.js media-access.test.js password-security.test.js",
+    "test": "pnpm run lint && node --test marketplace-account-response.test.js media-access.test.js password-security.test.js mail-template.test.js",
     "clean": "rm -rf dist"
   },
   "dependencies": {

@@ -23,7 +23,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
-### Backend API (`apps/api/db-server.js`) v0.4.4
+### Backend API (`apps/api/db-server.js`) v0.4.5
 - [x] `POST /auth/register` - creates inactive accounts, generates activation tokens, sends activation email, and returns activation-required messaging
 - [x] `GET /auth/activate` - validates activation link, activates account, and renders an HTML confirmation page
 - [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
@@ -83,6 +83,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Active session list with single/all-other session revocation; password reset invalidates all sessions through `sessionVersion` and DB revocation
 - [x] SMTP startup verification plus delivery-result logging to separate relay acceptance from inbox-side deliverability issues
 - [x] SMTP runtime now supports both `587` STARTTLS and `465` SSL/TLS via `SMTP_SECURE`
+- [x] Transactional email HTML uses explicit light color-mode metadata, opaque backgrounds, and high-contrast text to remain legible in clients using automatic dark mode
 - [x] SMTP debug transport logging disabled to avoid leaking reset codes or mail transport details in container logs
 - [x] Mail config warnings for placeholder/misaligned SMTP sender settings
 - [x] Runtime SMTP config supports explicit `SMTP_FROM_NAME`, `SMTP_REPLY_TO`, `SMTP_SENDER`, and optional public URL envs for domain-based auth links

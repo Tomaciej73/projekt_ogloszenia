@@ -210,6 +210,7 @@ packages/config/
 - SMTP relay acceptance alone is not enough for Gmail/Onet inbox delivery; verified sender mailbox plus aligned SPF/DKIM/DMARC remain required.
 - Verbose nodemailer transport logging is disabled in runtime to avoid leaking reset codes or SMTP session details into container logs.
 - SMTP certificate verification is enabled by default again; invalid certificates are allowed only through the explicit `SMTP_TLS_ALLOW_INVALID_CERTS=true` debug flag.
+- Transactional email HTML deliberately declares `color-scheme: light`, supplies legacy `bgcolor` attributes, and uses opaque high-contrast colors instead of gradients or translucent text so clients with automatic dark mode do not create unreadable mixed-color rendering.
 - JSON request parsing in `apps/api/db-server.js` now enforces byte caps while reading the stream: 1 MB for normal JSON endpoints and a larger route-specific cap for `/media/upload` that matches the 10 MB decoded image limit plus base64 overhead.
 - Auth rate limit counters now live in Redis, while the forgot-password resend cooldown is persisted in PostgreSQL through the existing `User.passwordResetRequestedAt` field.
 - If Redis is unavailable, auth endpoints currently fail closed with a temporary `503` because rate limiting is treated as required security infrastructure.

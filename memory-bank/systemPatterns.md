@@ -218,6 +218,10 @@ apps/api/src/
 - `.dockerignore` excludes `.env`, temporary local artifacts, `node_modules`, git metadata, security artifacts, AI workflow files, and package build output from Docker build context transfer.
 - Multi-stage Docker builds compile shared config packages once, then use `pnpm deploy --prod --legacy --ignore-scripts` to copy only the runtime app payload plus pruned production dependencies into the final image.
 - Active JS runtimes now load validated config from compiled `@multiportal/config/dist/config.js`, so the final images do not need the runtime `tsx` dependency or the full monorepo source layout.
+
+### 19. Transactional Email Color-Mode Pattern
+- Email clients may partially transform CSS under automatic dark mode, so transactional templates declare `color-scheme: light` and `supported-color-schemes: light` in both HTML and metadata.
+- All essential surfaces use opaque inline `background-color` and foreground colors, plus legacy `bgcolor` attributes on the outer and card tables. Do not use transparent gradient text or translucent text colors for security-critical instructions, reset codes, or activation links.
 - The API image runs Prisma client generation during the image build and `prisma migrate deploy` during container startup using explicit Prisma config paths, avoiding working-directory ambiguity in both the builder and the pruned runtime image.
 - The API builder normalizes the entrypoint script to LF before it is executed by Alpine `/bin/sh`, so a Windows checkout cannot break migration startup through CRLF line endings.
 - App runtime images switch to the non-root `node` user and declare Docker healthchecks through `apps/api/healthcheck.js`, `apps/web/healthcheck.js`, and `apps/worker/healthcheck.js`.

@@ -87,37 +87,39 @@ function getFirstName(userName) {
 
 function buildEmailHtml({ subject, headline, firstName, intro, contentHtml, footerNote }) {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme:light;supported-color-schemes:light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
   <title>${escapeHtml(subject)}</title>
 </head>
-<body style="margin:0;padding:0;background:#0f0c29;font-family:system-ui,-apple-system,sans-serif;color:#fff">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);min-height:100vh">
+<body bgcolor="#f3f4f6" style="margin:0;padding:0;background-color:#f3f4f6;font-family:Arial,Helvetica,sans-serif;color:#1f2937">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f3f4f6" style="background-color:#f3f4f6;min-height:100vh">
     <tr>
       <td align="center" style="padding:2rem 1rem">
-        <table role="presentation" width="500" cellpadding="0" cellspacing="0" style="max-width:500px;width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:16px;overflow:hidden">
+        <table role="presentation" width="500" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="max-width:500px;width:100%;background-color:#ffffff;border:1px solid #d1d5db;border-radius:16px;overflow:hidden">
           <tr>
-            <td style="padding:2rem 2rem 1rem;text-align:center">
-              <h1 style="margin:0;font-size:1.6rem;font-weight:800;background:linear-gradient(90deg,#e94560,#f39c12);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">MultiPortal</h1>
-              <p style="margin:0.25rem 0 0;font-size:0.85rem;color:rgba(255,255,255,0.5)">Listing Manager</p>
+            <td style="padding:2rem 2rem 1rem;text-align:center;background-color:#ffffff">
+              <h1 style="margin:0;font-size:1.6rem;font-weight:800;color:#be123c">MultiPortal</h1>
+              <p style="margin:0.25rem 0 0;font-size:0.85rem;color:#4b5563">Listing Manager</p>
             </td>
           </tr>
           <tr>
-            <td style="padding:1.5rem 2rem">
-              <h2 style="margin:0 0 1rem;font-size:1.2rem;color:#fff">${escapeHtml(headline)}</h2>
-              <p style="margin:0 0 1rem;color:rgba(255,255,255,0.75);line-height:1.6;font-size:0.95rem">Hi ${escapeHtml(firstName)},</p>
-              <p style="margin:0 0 1rem;color:rgba(255,255,255,0.75);line-height:1.6;font-size:0.95rem">${escapeHtml(intro)}</p>
+            <td style="padding:1.5rem 2rem;background-color:#ffffff">
+              <h2 style="margin:0 0 1rem;font-size:1.2rem;color:#111827">${escapeHtml(headline)}</h2>
+              <p style="margin:0 0 1rem;color:#374151;line-height:1.6;font-size:0.95rem">Hi ${escapeHtml(firstName)},</p>
+              <p style="margin:0 0 1rem;color:#374151;line-height:1.6;font-size:0.95rem">${escapeHtml(intro)}</p>
               ${contentHtml}
-              <div style="margin:1.5rem 0;padding:1rem;background:rgba(255,255,255,0.05);border-radius:8px;border-left:3px solid #f39c12">
-                <p style="margin:0;font-size:0.85rem;color:rgba(255,255,255,0.6);line-height:1.5">${footerNote}</p>
+              <div style="margin:1.5rem 0;padding:1rem;background-color:#fffbeb;border-radius:8px;border-left:3px solid #d97706">
+                <p style="margin:0;font-size:0.85rem;color:#374151;line-height:1.5">${footerNote}</p>
               </div>
             </td>
           </tr>
           <tr>
-            <td style="padding:1rem 2rem 2rem;border-top:1px solid rgba(255,255,255,0.08)">
-              <p style="margin:0;font-size:0.75rem;color:rgba(255,255,255,0.3);text-align:center;line-height:1.5">
+            <td style="padding:1rem 2rem 2rem;background-color:#ffffff;border-top:1px solid #e5e7eb">
+              <p style="margin:0;font-size:0.75rem;color:#6b7280;text-align:center;line-height:1.5">
                 MultiPortal Listing Manager - This is an automated message, please do not reply.<br>
                 (c) 2026 MultiPortal. All rights reserved.
               </p>
@@ -165,8 +167,8 @@ async function sendPasswordResetEmail(to, resetCode, userName, activatesAccount 
     ? "Your account is not active yet. Use the reset code below to activate your account and choose a new password."
     : "We received a request to reset your password. Use the reset code below to set a new password for your MultiPortal account.";
   const footerNote = activatesAccount
-    ? '<strong style="color:#f39c12">Activation note:</strong> This code will activate your account after you set a new password.'
-    : '<strong style="color:#f39c12">Security note:</strong> If you did not request a password reset, you can safely ignore this email. Your password will not be changed.';
+    ? '<strong style="color:#92400e">Activation note:</strong> This code will activate your account after you set a new password.'
+    : '<strong style="color:#92400e">Security note:</strong> If you did not request a password reset, you can safely ignore this email. Your password will not be changed.';
 
   const html = buildEmailHtml({
     subject,
@@ -174,12 +176,12 @@ async function sendPasswordResetEmail(to, resetCode, userName, activatesAccount 
     firstName,
     intro,
     contentHtml: `
-      <div style="margin:1.5rem 0;padding:1.25rem;background:rgba(233,69,96,0.1);border:1px solid rgba(233,69,96,0.3);border-radius:12px;text-align:center">
-        <p style="margin:0 0 0.5rem;font-size:0.75rem;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:1px">Your Reset Code</p>
-        <p style="margin:0;font-size:1.5rem;font-weight:700;color:#e94560;font-family:monospace;letter-spacing:6px">${escapeHtml(resetCode)}</p>
+      <div style="margin:1.5rem 0;padding:1.25rem;background-color:#fff1f2;border:1px solid #fda4af;border-radius:12px;text-align:center">
+        <p style="margin:0 0 0.5rem;font-size:0.75rem;color:#4b5563;text-transform:uppercase;letter-spacing:1px">Your Reset Code</p>
+        <p style="margin:0;font-size:1.5rem;font-weight:700;color:#be123c;font-family:monospace;letter-spacing:6px">${escapeHtml(resetCode)}</p>
       </div>
-      <p style="margin:0 0 1rem;color:rgba(255,255,255,0.75);line-height:1.6;font-size:0.95rem">
-        Paste this code into the reset form to continue. This code will expire in <strong style="color:#f39c12">1 hour</strong>.
+      <p style="margin:0 0 1rem;color:#374151;line-height:1.6;font-size:0.95rem">
+        Paste this code into the reset form to continue. This code will expire in <strong style="color:#92400e">1 hour</strong>.
       </p>`,
     footerNote,
   });
@@ -202,18 +204,18 @@ async function sendAccountActivationEmail(to, activationUrl, userName) {
     intro: "Thanks for registering. Confirm your email address by clicking the activation button below.",
     contentHtml: `
       <div style="margin:1.5rem 0;text-align:center">
-        <a href="${safeUrl}" style="display:inline-block;padding:0.9rem 1.5rem;background:linear-gradient(90deg,#e94560,#c23152);color:#fff;text-decoration:none;font-weight:700;border-radius:10px">Activate Account</a>
+        <a href="${safeUrl}" style="display:inline-block;padding:0.9rem 1.5rem;background-color:#be123c;color:#ffffff;text-decoration:none;font-weight:700;border-radius:10px">Activate Account</a>
       </div>
-      <p style="margin:0 0 0.75rem;color:rgba(255,255,255,0.75);line-height:1.6;font-size:0.95rem">
-        This activation link will expire in <strong style="color:#f39c12">1 hour</strong>.
+      <p style="margin:0 0 0.75rem;color:#374151;line-height:1.6;font-size:0.95rem">
+        This activation link will expire in <strong style="color:#92400e">1 hour</strong>.
       </p>
-      <p style="margin:0;color:rgba(255,255,255,0.65);line-height:1.6;font-size:0.9rem">
+      <p style="margin:0;color:#4b5563;line-height:1.6;font-size:0.9rem">
         If the button does not work, copy and paste this link into your browser:
       </p>
       <p style="margin:0.75rem 0 0;word-break:break-word;font-size:0.88rem;line-height:1.6">
-        <a href="${safeUrl}" style="color:#f39c12;text-decoration:underline">${safeUrl}</a>
+        <a href="${safeUrl}" style="color:#9f1239;text-decoration:underline">${safeUrl}</a>
       </p>`,
-    footerNote: '<strong style="color:#f39c12">Need help?</strong> If the link expires, use "Forgot password" on the login screen to activate your account and set a new password.',
+    footerNote: '<strong style="color:#92400e">Need help?</strong> If the link expires, use "Forgot password" on the login screen to activate your account and set a new password.',
   });
 
   const text = `MultiPortal Listing Manager - Activate Your Account\n\nHi ${firstName},\n\nThanks for registering. Activate your account by opening the link below:\n\n${activationUrl}\n\nThis activation link will expire in 1 hour.\n\nIf the link expires, use "Forgot password" on the login screen to activate your account and set a new password.\n\nMultiPortal Listing Manager`;
