@@ -211,6 +211,8 @@ apps/api/src/
 - A signed JWT contains a user ID, an opaque database-backed session ID, and the user's session version. A cookie is not accepted solely because its JWT signature is valid.
 - Every protected request verifies that the user exists, the session version matches, and the `AuthSession` row is active and unexpired. `lastSeenAt` is updated at most once every five minutes to limit write load.
 - `GET /auth/sessions` exposes only the current user's active session metadata, and `DELETE /auth/sessions/:id` ends an individual session. `DELETE /auth/sessions` ends every other active session.
+- `GET /auth/session-state` is a minimal `Cache-Control: no-store` heartbeat for already signed-in browsers. Invalid sessions return a reason-coded `401` (`token_invalid`, `session_security_change`, `session_revoked`, `session_expired`, `session_missing`) and clear both `mp_auth` and `mp_csrf`.
+- The web runtime injects a shared session watcher into every HTML page. It polls `/auth/session-state`, mirrors revocation countdowns across same-browser tabs through `localStorage`, shows a five-second warning banner, then clears browser auth state and redirects to sign-in.
 - Password reset increments `User.sessionVersion` and revokes all `AuthSession` rows in the same transaction, invalidating every pre-reset JWT.
 
 ### 18. Hardened Runtime Image Pattern

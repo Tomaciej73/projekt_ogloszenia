@@ -79,6 +79,14 @@ const UPLOAD_RATE_LIMIT_WINDOW_MS = config.UPLOAD_RATE_LIMIT_WINDOW_MS;
 const UPLOAD_RATE_LIMIT_MAX_REQUESTS = config.UPLOAD_RATE_LIMIT_MAX_REQUESTS;
 const PUBLICATION_RATE_LIMIT_WINDOW_MS = config.PUBLICATION_RATE_LIMIT_WINDOW_MS;
 const PUBLICATION_RATE_LIMIT_MAX_REQUESTS = config.PUBLICATION_RATE_LIMIT_MAX_REQUESTS;
+const AUTH_FAILURE_REASONS = Object.freeze({
+  AUTH_REQUIRED: "auth_required",
+  TOKEN_INVALID: "token_invalid",
+  SESSION_SECURITY_CHANGE: "session_security_change",
+  SESSION_REVOKED: "session_revoked",
+  SESSION_EXPIRED: "session_expired",
+  SESSION_MISSING: "session_missing",
+});
 
 class RequestBodyTooLargeError extends Error {
   constructor(limitBytes) {
@@ -924,6 +932,21 @@ function buildClearedAuthCookie(req) {
   });
 }
 
+function buildClearedCsrfCookie(req) {
+  return buildCookieHeader(CSRF_COOKIE_NAME, "", {
+    maxAge: 0,
+    expires: new Date(0),
+    path: "/",
+    httpOnly: true,
+    sameSite: "Strict",
+    secure: isSecureRequest(req),
+  });
+}
+
+function buildClearedAuthStateCookies(req) {
+  return [buildClearedAuthCookie(req), buildClearedCsrfCookie(req)];
+}
+
 function normalizeSessionUserAgent(req) {
   const headerValue = Array.isArray(req.headers["user-agent"])
     ? req.headers["user-agent"][0]
@@ -972,25 +995,60 @@ function getAuthClaims(req) {
   const auth = req.headers["authorization"];
   if (auth?.startsWith("Bearer ")) {
     const bearerClaims = verifyToken(auth.slice(7));
-    if (bearerClaims) return bearerClaims;
+    return bearerClaims
+      ? { claims: bearerClaims, reason: null }
+      : { claims: null, reason: AUTH_FAILURE_REASONS.TOKEN_INVALID };
   }
+
   const cookies = parseCookies(req);
-  return verifyToken(cookies[AUTH_COOKIE_NAME] || "");
+  const cookieToken = cookies[AUTH_COOKIE_NAME] || "";
+  if (!cookieToken) {
+    return { claims: null, reason: AUTH_FAILURE_REASONS.AUTH_REQUIRED };
+  }
+
+  const cookieClaims = verifyToken(cookieToken);
+  return cookieClaims
+    ? { claims: cookieClaims, reason: null }
+    : { claims: null, reason: AUTH_FAILURE_REASONS.TOKEN_INVALID };
 }
 
-function respondAuthenticationRequired(req, res, { clearCookie = false } = {}) {
+function getAuthenticationErrorMessage(reason) {
+  switch (reason) {
+    case AUTH_FAILURE_REASONS.TOKEN_INVALID:
+      return "This session is no longer valid. Please sign in again.";
+    case AUTH_FAILURE_REASONS.SESSION_SECURITY_CHANGE:
+      return "This session was invalidated after account security changes. Please sign in again.";
+    case AUTH_FAILURE_REASONS.SESSION_REVOKED:
+      return "This session was ended from another device or browser. Please sign in again.";
+    case AUTH_FAILURE_REASONS.SESSION_EXPIRED:
+      return "This session has expired. Please sign in again.";
+    case AUTH_FAILURE_REASONS.SESSION_MISSING:
+      return "This session is no longer available. Please sign in again.";
+    case AUTH_FAILURE_REASONS.AUTH_REQUIRED:
+    default:
+      return "Authentication required";
+  }
+}
+
+function respondAuthenticationRequired(req, res, { clearCookie = false, reason = AUTH_FAILURE_REASONS.AUTH_REQUIRED } = {}) {
   return jsonResponse(
     res,
     401,
-    { error: "Authentication required" },
-    clearCookie ? { "Set-Cookie": buildClearedAuthCookie(req) } : {},
+    { error: getAuthenticationErrorMessage(reason), reason },
+    {
+      "Cache-Control": "no-store",
+      ...(clearCookie ? { "Set-Cookie": buildClearedAuthStateCookies(req) } : {}),
+    },
   );
 }
 
 async function requireAuthenticatedUser(req, res, select = { id: true }) {
-  const claims = getAuthClaims(req);
+  const { claims, reason } = getAuthClaims(req);
   if (!claims) {
-    respondAuthenticationRequired(req, res, { clearCookie: true });
+    respondAuthenticationRequired(req, res, {
+      clearCookie: reason !== AUTH_FAILURE_REASONS.AUTH_REQUIRED,
+      reason,
+    });
     return null;
   }
 
@@ -1000,22 +1058,45 @@ async function requireAuthenticatedUser(req, res, select = { id: true }) {
   });
 
   if (!user || user.sessionVersion !== claims.sessionVersion) {
-    respondAuthenticationRequired(req, res, { clearCookie: true });
+    respondAuthenticationRequired(req, res, {
+      clearCookie: true,
+      reason: AUTH_FAILURE_REASONS.SESSION_SECURITY_CHANGE,
+    });
     return null;
   }
 
   const now = new Date();
-  const session = await prisma.authSession.findFirst({
-    where: {
-      id: claims.sessionId,
-      userId: claims.userId,
-      revokedAt: null,
-      expiresAt: { gt: now },
+  const session = await prisma.authSession.findUnique({
+    where: { id: claims.sessionId },
+    select: {
+      id: true,
+      userId: true,
+      lastSeenAt: true,
+      expiresAt: true,
+      revokedAt: true,
     },
-    select: { id: true, lastSeenAt: true },
   });
-  if (!session) {
-    respondAuthenticationRequired(req, res, { clearCookie: true });
+  if (!session || session.userId !== claims.userId) {
+    respondAuthenticationRequired(req, res, {
+      clearCookie: true,
+      reason: AUTH_FAILURE_REASONS.SESSION_MISSING,
+    });
+    return null;
+  }
+
+  if (session.revokedAt) {
+    respondAuthenticationRequired(req, res, {
+      clearCookie: true,
+      reason: AUTH_FAILURE_REASONS.SESSION_REVOKED,
+    });
+    return null;
+  }
+
+  if (session.expiresAt.getTime() <= now.getTime()) {
+    respondAuthenticationRequired(req, res, {
+      clearCookie: true,
+      reason: AUTH_FAILURE_REASONS.SESSION_EXPIRED,
+    });
     return null;
   }
 
@@ -1861,10 +1942,23 @@ const server = http.createServer(async (req, res) => {
             : wasLocked
               ? "Your account has been unlocked and your password has been updated. You can now log in."
               : "Password has been reset. You can now log in with the new password.",
-      }, { "Set-Cookie": buildClearedAuthCookie(req) });
+      }, {
+        "Cache-Control": "no-store",
+        "Set-Cookie": buildClearedAuthStateCookies(req),
+      });
     }
 
     // ── Auth: Me ──
+    if (path === "/auth/session-state" && req.method === "GET") {
+      const currentUser = await requireAuthenticatedUser(req, res);
+      if (!currentUser) return;
+
+      return jsonResponse(res, 200, {
+        authenticated: true,
+        session: { id: req.authSession.id },
+      }, { "Cache-Control": "no-store" });
+    }
+
     if (path === "/auth/me" && req.method === "GET") {
       const user = await requireAuthenticatedUser(req, res, {
         id: true,
@@ -1872,7 +1966,12 @@ const server = http.createServer(async (req, res) => {
         name: true,
       });
       if (!user) return;
-      return jsonResponse(res, 200, { user: { id: user.id, email: user.email, name: user.name } });
+      return jsonResponse(
+        res,
+        200,
+        { user: { id: user.id, email: user.email, name: user.name } },
+        { "Cache-Control": "no-store" },
+      );
     }
 
     if (path === "/auth/sessions" && req.method === "GET") {
@@ -1943,7 +2042,7 @@ const server = http.createServer(async (req, res) => {
         message: isCurrentSession ? "Current session ended." : "Session ended.",
       }, {
         "Cache-Control": "no-store",
-        ...(isCurrentSession ? { "Set-Cookie": buildClearedAuthCookie(req) } : {}),
+        ...(isCurrentSession ? { "Set-Cookie": buildClearedAuthStateCookies(req) } : {}),
       });
     }
 
@@ -1963,7 +2062,10 @@ const server = http.createServer(async (req, res) => {
         res,
         200,
         { message: "Logged out successfully." },
-        { "Set-Cookie": buildClearedAuthCookie(req) },
+        {
+          "Cache-Control": "no-store",
+          "Set-Cookie": buildClearedAuthStateCookies(req),
+        },
       );
     }
 

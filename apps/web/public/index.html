@@ -542,6 +542,8 @@
     function showLoggedOut() {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      localStorage.removeItem('mp_session_notice');
+      try { sessionStorage.clear(); } catch {}
       csrfToken = '';
       clearAuthenticationFields();
       document.getElementById('userName').textContent = '-';

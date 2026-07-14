@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotImplementedException } from "@nestjs/common";
 import { loadApiConfig } from "@multiportal/config";
 
 const config = loadApiConfig();
@@ -13,6 +13,12 @@ function encodePathSegments(value: string): string {
 
 @Injectable()
 export class MediaService {
+  async getUploadUrl(_key: string, _contentType: string): Promise<string> {
+    throw new NotImplementedException(
+      "Direct upload URLs are disabled in the active runtime. Upload media through the API instead.",
+    );
+  }
+
   /**
    * Builds the same-origin API route for an already authorized media object.
    */

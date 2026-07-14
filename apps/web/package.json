@@ -1,6 +1,6 @@
 {
   "name": "@multiportal/web",
-  "version": "0.4.17",
+  "version": "0.4.18",
   "private": true,
   "description": "MultiPortal Listing Manager web frontend (Next.js)",
   "scripts": {
@@ -9,7 +9,7 @@
     "start": "node front-server.js",
     "build": "next build",
     "lint": "tsc --noEmit -p tsconfig.json && node --check front-server.js && node --check healthcheck.js && node --check runtime-config.js",
-    "test": "pnpm run lint && node --test auth-form-security.test.js account-panel.test.js listings-feedback.test.js",
+    "test": "pnpm run lint && node --test auth-form-security.test.js account-panel.test.js listings-feedback.test.js session-termination-watcher.test.js",
     "clean": "rm -rf .next dist"
   },
   "dependencies": {

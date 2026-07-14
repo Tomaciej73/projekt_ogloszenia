@@ -1,9 +1,9 @@
 # Progress
 
 ## Current Status
-**Phase 7 - BullMQ Worker Integrated and Frontend Publication** (complete, with auth/config hardening, shared visitor telemetry, and expanded security assessment updates through 2026-07-14)
+**Phase 7 - BullMQ Worker Integrated and Frontend Publication** (complete, with auth/config hardening, cross-device session revocation, shared visitor telemetry, and expanded security assessment updates through 2026-07-14)
 
-BullMQ worker processes publication jobs from the Redis queue on port 6739. The API pushes publication jobs to the queue instead of using `setTimeout` mocks. The current runtime stack uses plain Node.js servers for API, web, and worker, with HttpOnly cookie auth backed by JWT signing, SMTP account activation emails, DB-backed login lockout after 5 failed attempts, 6-digit reset codes, stronger password validation across registration and reset flows, and fail-fast runtime config validation shared from `packages/config`.
+BullMQ worker processes publication jobs from the Redis queue on port 6739. The API pushes publication jobs to the queue instead of using `setTimeout` mocks. The current runtime stack uses plain Node.js servers for API, web, and worker, with HttpOnly cookie auth backed by JWT signing, SMTP account activation emails, DB-backed login lockout after 5 failed attempts, 6-digit reset codes, stronger password validation across registration and reset flows, cross-device session invalidation warnings, and fail-fast runtime config validation shared from `packages/config`.
 
 ## Completed
 
@@ -23,13 +23,14 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
-### Backend API (`apps/api/db-server.js`) v0.4.17
+### Backend API (`apps/api/db-server.js`) v0.4.18
 - [x] `POST /auth/register` - creates inactive accounts, generates activation tokens, sends activation email, and returns activation-required messaging
 - [x] `GET /auth/activate` - validates activation link, activates account, and renders an HTML confirmation page
 - [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
 - [x] `POST /auth/forgot-password` - validates email/account existence, generates a 6-digit reset code, stores only its DB-backed hash plus expiry metadata, sends it via SMTP, and doubles as the recovery activation path for inactive accounts
 - [x] `POST /auth/reset-password` - validates email, DB-backed reset code hash, unique passphrase, and breach status; changes password, clears reset state, unlocks/activates the account, and revokes all prior sessions atomically
 - [x] `GET /auth/csrf` - issues and refreshes the same-origin CSRF token used by mutating browser requests
+- [x] `GET /auth/session-state` - lightweight no-store heartbeat that confirms the current session or returns a reasoned `401` while clearing auth-state cookies for revoked/expired/invalid sessions
 - [x] `GET /auth/me` - current user info
 - [x] `GET/DELETE /auth/sessions` and `DELETE /auth/sessions/:id` - list active sessions and end every other or a selected session
 - [x] `POST /auth/logout` - revokes the current database session and clears the HttpOnly auth cookie
@@ -64,6 +65,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `public/register.html` - standalone registration page with passphrase guidance, activation-required messaging, and CSRF-protected signup
 - [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint, DB-synced remaining login-attempt messaging, and CSRF-protected login
 - [x] `front-server.js` - static file server plus same-origin API proxy, including media requests that the API authorizes before MinIO access
+- [x] `front-server.js` - injects a shared session-termination watcher into every served HTML page, so revoked sessions show a five-second warning before forced sign-out
 - [x] All served HTML pages now receive a shared in-flow footer shell with a lower-right `Visitors:` counter, including standalone pages that did not define their own footer before
 - [x] User-visible version labels now render from the shared package SemVer (`0.4.1`) instead of duplicated hardcoded footer/log strings
 - [x] Main auth flows now surface rate-limit hits as warning toasts with retry timing
@@ -73,6 +75,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `apps/web/src/` scaffold no longer hardcodes `localhost` API URLs; it now supports optional `NEXT_PUBLIC_API_BASE_URL` with same-origin fallback
 - [x] Dashboard after login with listing list and stats
 - [x] Session persistence via HttpOnly auth cookie plus non-secret user cache in localStorage (survives refresh/new tab)
+- [x] Cross-device or cross-tab session revocation now warns the removed session for 5 seconds, clears local/session storage, and returns the browser to the sign-in screen
 
 ### Security
 - [x] All credentials only from `.env` via dotenv
@@ -89,6 +92,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] Active API and worker write secret-safe `AuditLog` records for registration/activation/login, password reset, marketplace link/unlink, listing status changes, media upload, and publication lifecycle transitions
 - [x] Protected API routes now verify that the authenticated user still exists in PostgreSQL, so stale cookies after a DB reset are cleared with `401` instead of crashing `/auth/me`
 - [x] Active session list with single/all-other session revocation; password reset invalidates all sessions through `sessionVersion` and DB revocation
+- [x] Revoked, expired, missing, or security-invalidated sessions now receive reason-coded `401` responses that clear both `mp_auth` and `mp_csrf`, allowing the shared frontend watcher to force logout cleanly
 - [x] SMTP startup verification plus delivery-result logging to separate relay acceptance from inbox-side deliverability issues
 - [x] SMTP runtime now supports both `587` STARTTLS and `465` SSL/TLS via `SMTP_SECURE`
 - [x] Transactional email HTML uses explicit light color-mode metadata, opaque backgrounds, and high-contrast text to remain legible in clients using automatic dark mode

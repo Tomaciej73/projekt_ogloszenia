@@ -237,19 +237,345 @@ function buildVisitorCounterMarkup(nonce) {
   </script>`;
 }
 
+function buildSessionTerminationWatcherMarkup(nonce) {
+  return `
+  <style nonce="${nonce}">
+    .global-session-termination-notice {
+      position: fixed;
+      top: 1rem;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(92vw, 34rem);
+      padding: 0.95rem 1rem;
+      border: 1px solid rgba(251, 191, 36, 0.45);
+      border-radius: 14px;
+      background: rgba(37, 27, 58, 0.96);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+      color: #fff;
+      z-index: 4000;
+      display: none;
+      pointer-events: none;
+      backdrop-filter: blur(12px);
+    }
+
+    .global-session-termination-notice.active {
+      display: block;
+    }
+
+    .global-session-termination-notice strong {
+      display: block;
+      color: #fcd34d;
+      font-size: 0.92rem;
+      letter-spacing: 0.02em;
+    }
+
+    .global-session-termination-notice p {
+      margin: 0.38rem 0 0;
+      color: rgba(255,255,255,0.9);
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+  </style>
+  <script nonce="${nonce}">
+    (function () {
+      const AUTH_MARKER = "cookie-session";
+      const TOKEN_STORAGE_KEY = "token";
+      const USER_STORAGE_KEY = "user";
+      const SESSION_NOTICE_STORAGE_KEY = "mp_session_notice";
+      const SESSION_STATE_POLL_INTERVAL_MS = 3000;
+      const SESSION_LOGOUT_DELAY_MS = 5000;
+      const SESSION_REASON_MESSAGES = {
+        session_revoked: "This session was ended from another device or browser.",
+        session_security_change: "This session was invalidated after account security changes.",
+        session_expired: "This session has expired.",
+        session_missing: "This session is no longer available.",
+        token_invalid: "This session is no longer valid.",
+      };
+
+      let noticeElement = null;
+      let countdownIntervalId = null;
+      let countdownDeadlineMs = 0;
+      let countdownReason = "";
+      let countdownMessage = "";
+      let forcedLogoutCompleted = false;
+
+      function canUseStorage() {
+        try {
+          const probeKey = "__mp_session_probe__";
+          window.localStorage.setItem(probeKey, "1");
+          window.localStorage.removeItem(probeKey);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      const storageEnabled = canUseStorage();
+
+      function hasStoredSessionMarker() {
+        if (!storageEnabled) return false;
+        return window.localStorage.getItem(TOKEN_STORAGE_KEY) === AUTH_MARKER;
+      }
+
+      function ensureNoticeElement() {
+        if (noticeElement || !document.body) return noticeElement;
+
+        noticeElement = document.createElement("section");
+        noticeElement.className = "global-session-termination-notice";
+        noticeElement.setAttribute("role", "alert");
+        noticeElement.setAttribute("aria-live", "assertive");
+
+        const heading = document.createElement("strong");
+        heading.textContent = "Session ending soon";
+        const body = document.createElement("p");
+
+        noticeElement.append(heading, body);
+        document.body.appendChild(noticeElement);
+        return noticeElement;
+      }
+
+      function hideNotice() {
+        const element = ensureNoticeElement();
+        if (!element) return;
+        element.classList.remove("active");
+        const body = element.querySelector("p");
+        if (body) body.textContent = "";
+      }
+
+      function renderNotice(message, secondsLeft) {
+        const element = ensureNoticeElement();
+        if (!element) return;
+        const body = element.querySelector("p");
+        if (body) {
+          body.textContent = message + " You will be signed out in " + secondsLeft + "s.";
+        }
+        element.classList.add("active");
+      }
+
+      function rememberSessionNotice(reason, message, deadlineMs) {
+        if (!storageEnabled) return;
+        try {
+          window.localStorage.setItem(SESSION_NOTICE_STORAGE_KEY, JSON.stringify({
+            reason,
+            message,
+            deadlineMs,
+            at: Date.now(),
+          }));
+        } catch {
+          // Ignore storage synchronization failures.
+        }
+      }
+
+      function clearLocalSessionArtifacts() {
+        if (storageEnabled) {
+          try { window.localStorage.removeItem(TOKEN_STORAGE_KEY); } catch {}
+          try { window.localStorage.removeItem(USER_STORAGE_KEY); } catch {}
+          try { window.localStorage.removeItem(SESSION_NOTICE_STORAGE_KEY); } catch {}
+        }
+        try { window.sessionStorage.clear(); } catch {}
+      }
+
+      function completeForcedLogout() {
+        if (forcedLogoutCompleted) return;
+        forcedLogoutCompleted = true;
+        if (countdownIntervalId) {
+          window.clearInterval(countdownIntervalId);
+          countdownIntervalId = null;
+        }
+
+        const finalMessage = (countdownMessage || SESSION_REASON_MESSAGES[countdownReason] || "Your session has ended.") + " Please sign in again.";
+        clearLocalSessionArtifacts();
+
+        try {
+          if (typeof window.showLoggedOut === "function") {
+            window.showLoggedOut();
+          }
+        } catch {
+          // Ignore page-specific UI cleanup failures.
+        }
+
+        try {
+          if (typeof window.toast === "function") {
+            window.toast(finalMessage, "warning");
+          }
+        } catch {
+          // Ignore page-local toast failures.
+        }
+
+        hideNotice();
+
+        const currentPath = window.location.pathname || "/";
+        if (currentPath === "/" || currentPath === "/index.html") {
+          return;
+        }
+
+        window.location.href = "/";
+      }
+
+      function updateCountdownNotice() {
+        if (!countdownDeadlineMs) return;
+
+        const remainingMs = countdownDeadlineMs - Date.now();
+        if (remainingMs <= 0) {
+          completeForcedLogout();
+          return;
+        }
+
+        const secondsLeft = Math.max(1, Math.ceil(remainingMs / 1000));
+        renderNotice(
+          countdownMessage || SESSION_REASON_MESSAGES[countdownReason] || "Your session is no longer valid.",
+          secondsLeft,
+        );
+      }
+
+      function beginForcedLogout(reason, deadlineMs, message, options = {}) {
+        if (forcedLogoutCompleted) return;
+
+        const normalizedReason = typeof reason === "string" && reason
+          ? reason
+          : "session_revoked";
+        const normalizedMessage = typeof message === "string" && message.trim()
+          ? message.trim()
+          : (SESSION_REASON_MESSAGES[normalizedReason] || "Your session is no longer valid.");
+        const fallbackDeadlineMs = Date.now() + SESSION_LOGOUT_DELAY_MS;
+        const normalizedDeadlineMs = Number.isFinite(deadlineMs) && deadlineMs > Date.now()
+          ? deadlineMs
+          : fallbackDeadlineMs;
+
+        countdownReason = normalizedReason;
+        countdownMessage = normalizedMessage;
+        countdownDeadlineMs = countdownDeadlineMs
+          ? Math.min(countdownDeadlineMs, normalizedDeadlineMs)
+          : normalizedDeadlineMs;
+
+        if (options.broadcast !== false) {
+          rememberSessionNotice(countdownReason, countdownMessage, countdownDeadlineMs);
+        }
+
+        updateCountdownNotice();
+        if (countdownIntervalId) {
+          window.clearInterval(countdownIntervalId);
+        }
+        countdownIntervalId = window.setInterval(updateCountdownNotice, 250);
+      }
+
+      function handleSessionInvalidation(payload) {
+        const reason = String(payload && payload.reason || "");
+        const message = String(payload && payload.error || "").trim();
+
+        if (reason === "auth_required" && !hasStoredSessionMarker()) {
+          return;
+        }
+
+        if (
+          reason === "session_revoked" ||
+          reason === "session_security_change" ||
+          reason === "session_expired" ||
+          reason === "session_missing" ||
+          reason === "token_invalid"
+        ) {
+          beginForcedLogout(reason, Date.now() + SESSION_LOGOUT_DELAY_MS, message);
+        }
+      }
+
+      async function pollSessionState() {
+        if (forcedLogoutCompleted || !hasStoredSessionMarker()) return;
+
+        try {
+          const response = await window.fetch("/auth/session-state", {
+            method: "GET",
+            credentials: "same-origin",
+            cache: "no-store",
+            headers: { Accept: "application/json" },
+          });
+
+          if (response.ok) {
+            return;
+          }
+
+          let payload = {};
+          try {
+            payload = await response.json();
+          } catch {
+            payload = {};
+          }
+
+          if (response.status === 401) {
+            handleSessionInvalidation(payload);
+          }
+        } catch {
+          // Temporary network issues should not force logout.
+        }
+      }
+
+      window.addEventListener("storage", (event) => {
+        if (forcedLogoutCompleted) return;
+
+        if (event.key === SESSION_NOTICE_STORAGE_KEY && event.newValue) {
+          try {
+            const payload = JSON.parse(event.newValue);
+            beginForcedLogout(payload.reason, payload.deadlineMs, payload.message, { broadcast: false });
+          } catch {
+            // Ignore malformed storage events.
+          }
+          return;
+        }
+
+        if (event.key === TOKEN_STORAGE_KEY && event.oldValue === AUTH_MARKER && event.newValue === null) {
+          beginForcedLogout("session_revoked", Date.now() + SESSION_LOGOUT_DELAY_MS, "This session was signed out from another tab or browser.", { broadcast: false });
+        }
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          pollSessionState();
+        }
+      });
+
+      window.addEventListener("pagehide", () => {
+        if (countdownIntervalId) {
+          window.clearInterval(countdownIntervalId);
+          countdownIntervalId = null;
+        }
+      });
+
+      if (storageEnabled && hasStoredSessionMarker()) {
+        try {
+          const storedNotice = JSON.parse(window.localStorage.getItem(SESSION_NOTICE_STORAGE_KEY) || "null");
+          if (storedNotice && Number.isFinite(storedNotice.deadlineMs) && storedNotice.deadlineMs > Date.now()) {
+            beginForcedLogout(storedNotice.reason, storedNotice.deadlineMs, storedNotice.message, { broadcast: false });
+          }
+        } catch {
+          // Ignore malformed persisted notices.
+        }
+      }
+
+      if (hasStoredSessionMarker()) {
+        pollSessionState();
+      }
+      window.setInterval(pollSessionState, SESSION_STATE_POLL_INTERVAL_MS);
+    }());
+  </script>`;
+}
+
 function injectRuntimeValuesIntoHtml(html, nonce) {
   const htmlWithVersion = html.replaceAll("__APP_VERSION__", APP_VERSION);
   const htmlWithFooter = ensureGlobalFooterShell(htmlWithVersion);
-  if (htmlWithFooter.includes('data-global-visitor-script="true"')) {
+  if (
+    htmlWithFooter.includes('data-global-visitor-script="true"') &&
+    htmlWithFooter.includes('data-global-session-watcher="true"')
+  ) {
     return htmlWithFooter;
   }
 
   const visitorCounterMarkup = buildVisitorCounterMarkup(nonce).replace("<script ", '<script data-global-visitor-script="true" ');
+  const sessionWatcherMarkup = buildSessionTerminationWatcherMarkup(nonce).replace("<script ", '<script data-global-session-watcher="true" ');
+  const runtimeMarkup = `${visitorCounterMarkup}\n${sessionWatcherMarkup}`;
   if (htmlWithFooter.includes("</body>")) {
-    return htmlWithFooter.replace("</body>", `${visitorCounterMarkup}\n</body>`);
+    return htmlWithFooter.replace("</body>", `${runtimeMarkup}\n</body>`);
   }
 
-  return `${htmlWithFooter}\n${visitorCounterMarkup}`;
+  return `${htmlWithFooter}\n${runtimeMarkup}`;
 }
 
 function buildHtmlSecurityHeaders(nonce) {

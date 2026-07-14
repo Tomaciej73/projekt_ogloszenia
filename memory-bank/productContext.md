@@ -74,3 +74,4 @@ MultiPortal Listing Manager provides a single interface to create a listing draf
 - No silent failures — every publication attempt must produce a visible outcome
 - Provider-specific limitations (max photos, max description length) should be enforced in the form
 - Authentication flows should explain password strength requirements up front, require email activation for new accounts, show remaining failed login attempts before lock, and allow inactive or locked accounts to recover through a mailbox-verified reset flow
+- If a user or password-reset flow ends another active session, the removed session should show a brief warning and then sign out automatically instead of silently continuing in a broken state

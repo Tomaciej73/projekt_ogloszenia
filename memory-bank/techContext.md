@@ -47,6 +47,7 @@ All dependency versions must follow the project policy defined in `.clinerules/0
 
 ## Application Version
 
+- `0.4.18` (2026-07-14) - PATCH security release. Revoked sessions now receive reason-coded auth failures, the API clears both auth-state cookies on invalid session detection, and the web runtime injects a shared five-second warning/forced-logout watcher across HTML pages.
 - `0.4.17` (2026-07-14) - PATCH UI release. The shared footer shell now stays in the normal document flow instead of being pinned to the viewport, and a responsive content wrapper keeps the centered version label plus right-aligned `Visitors:` counter from overlapping page content on desktop or mobile.
 - `0.4.16` (2026-07-14) - PATCH UI release. The web runtime now injects one shared fixed footer shell across HTML pages, including standalone pages without their own footer, and lays out the centered version text plus right-pinned `Visitors:` counter through a deterministic grid instead of post-render footer mutation.
 - `0.4.15` (2026-07-14) - PATCH UI release. The shared visitor counter now lives inside the fixed footer itself, preserving the centered version text while pinning the visitor label to the far right of the same footer row.
@@ -206,7 +207,9 @@ packages/config/
 - The active API now enforces configurable auth rate limits for `/auth/*` plus tighter per-route limits for login/register/activate/forgot-password/reset-password.
 - Password reset code re-sends are additionally throttled through `passwordResetRequestedAt`, so a fresh code cannot be requested again until the configured cooldown expires.
 - Every login creates an `AuthSession` and JWTs include both its opaque session ID and `User.sessionVersion`. Protected requests verify the active database session, and users can list/end individual or all other sessions through `/auth/sessions`.
+- The active API also exposes `GET /auth/session-state`, a no-store heartbeat used only by already signed-in browser pages to detect revoked, expired, missing, or otherwise invalid sessions without returning profile payloads.
 - Password reset increments `sessionVersion` and revokes all `AuthSession` rows in one transaction, invalidating every old JWT before the next request.
+- When a session fails those checks, the API now returns a reason-coded `401` and clears both `mp_auth` and `mp_csrf`; the web runtime listens for those reasons and forces a five-second warned sign-out across tabs/pages.
 - Login responses can return DB-backed `remainingLoginAttempts` and `accountLocked` flags so the frontend stays synchronized with the actual lock state.
 - Inactive accounts can also be activated through the forgot-password reset flow after mailbox verification.
 - Runtime startup now fails fast if required auth/storage/SMTP config is missing or invalid; the active API/web/worker processes no longer fall back to placeholder secrets or implicit `localhost` endpoints.
