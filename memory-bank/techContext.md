@@ -47,6 +47,7 @@ All dependency versions must follow the project policy defined in `.clinerules/0
 
 ## Application Version
 
+- `0.4.12` (2026-07-14) - PATCH UI release. The shared visitor counter now uses a fixed bottom dock that aligns to the footer padding and keeps the `Visitors:` label pinned to the right edge of the viewport on different screen sizes.
 - `0.4.11` (2026-07-14) - PATCH UI release. The shared visitor counter now sits in the lower-right viewport corner, shows the compact `Visitors:` label, and copies the rendered footer typography/colors for consistent presentation across static HTML pages.
 - `0.4.10` (2026-07-14) - PATCH analytics release. Static HTML pages now show a shared bottom-left unique visitor counter backed by PostgreSQL, with unique visitors keyed by HMAC-SHA256 hashes of normalized client IPs instead of raw addresses.
 - `0.4.4` (2026-07-13) - PATCH security release. Passwords use PBKDF2-HMAC-SHA512 with 220,000 iterations plus rehash-on-login, known breached passphrases are blocked through HIBP k-anonymity, and JWTs are backed by revocable database sessions.

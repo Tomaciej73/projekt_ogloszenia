@@ -1,6 +1,6 @@
 {
   "name": "multiportal-listing-manager",
-  "version": "0.4.11",
+  "version": "0.4.12",
   "private": true,
   "description": "MultiPortal Listing Manager — create listing drafts once and publish across multiple marketplace platforms",
   "scripts": {

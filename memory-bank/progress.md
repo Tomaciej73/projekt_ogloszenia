@@ -23,7 +23,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
-### Backend API (`apps/api/db-server.js`) v0.4.11
+### Backend API (`apps/api/db-server.js`) v0.4.12
 - [x] `POST /auth/register` - creates inactive accounts, generates activation tokens, sends activation email, and returns activation-required messaging
 - [x] `GET /auth/activate` - validates activation link, activates account, and renders an HTML confirmation page
 - [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords

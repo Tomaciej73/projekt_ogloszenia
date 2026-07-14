@@ -52,18 +52,27 @@ function injectNonceIntoHtml(html, nonce) {
 function buildVisitorCounterMarkup(nonce) {
   return `
   <div
-    id="globalVisitorCounter"
+    id="globalVisitorCounterDock"
     aria-live="polite"
-    style="position:fixed;right:max(1rem, env(safe-area-inset-right));bottom:max(1rem, env(safe-area-inset-bottom));z-index:30;max-width:calc(100vw - 2rem);text-align:right;pointer-events:none;visibility:hidden;"
-  >Visitors: --</div>
+    style="position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;justify-content:flex-end;align-items:flex-end;padding:0 max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));pointer-events:none;visibility:hidden;"
+  >
+    <div
+      id="globalVisitorCounter"
+      style="display:inline-flex;align-items:center;justify-content:flex-end;max-width:min(100%, 22rem);text-align:right;white-space:nowrap;"
+    >Visitors: --</div>
+  </div>
   <script nonce="${nonce}">
     (function () {
+      const visitorCounterDock = document.getElementById("globalVisitorCounterDock");
       const visitorCounter = document.getElementById("globalVisitorCounter");
-      if (!visitorCounter) return;
+      if (!visitorCounterDock || !visitorCounter) return;
       const footer = document.querySelector("footer");
       const footerStyles = footer ? window.getComputedStyle(footer) : null;
 
       if (footerStyles) {
+        visitorCounterDock.style.paddingRight = footerStyles.paddingRight;
+        visitorCounterDock.style.paddingBottom = footerStyles.paddingBottom;
+        visitorCounterDock.style.paddingLeft = footerStyles.paddingLeft;
         visitorCounter.style.color = footerStyles.color;
         visitorCounter.style.fontSize = footerStyles.fontSize;
         visitorCounter.style.fontFamily = footerStyles.fontFamily;
@@ -71,6 +80,9 @@ function buildVisitorCounterMarkup(nonce) {
         visitorCounter.style.letterSpacing = footerStyles.letterSpacing;
         visitorCounter.style.lineHeight = footerStyles.lineHeight;
       } else {
+        visitorCounterDock.style.paddingRight = "1rem";
+        visitorCounterDock.style.paddingBottom = "1rem";
+        visitorCounterDock.style.paddingLeft = "1rem";
         visitorCounter.style.color = "rgba(255,255,255,0.3)";
         visitorCounter.style.fontSize = "0.85rem";
         visitorCounter.style.fontFamily = "system-ui, -apple-system, sans-serif";
@@ -79,7 +91,7 @@ function buildVisitorCounterMarkup(nonce) {
         visitorCounter.style.lineHeight = "1.4";
       }
 
-      visitorCounter.style.visibility = "visible";
+      visitorCounterDock.style.visibility = "visible";
 
       fetch("/site-stats/visitors", {
         method: "GET",
