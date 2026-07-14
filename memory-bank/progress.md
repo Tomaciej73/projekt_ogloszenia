@@ -23,7 +23,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
-### Backend API (`apps/api/db-server.js`) v0.4.12
+### Backend API (`apps/api/db-server.js`) v0.4.17
 - [x] `POST /auth/register` - creates inactive accounts, generates activation tokens, sends activation email, and returns activation-required messaging
 - [x] `GET /auth/activate` - validates activation link, activates account, and renders an HTML confirmation page
 - [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
@@ -64,7 +64,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `public/register.html` - standalone registration page with passphrase guidance, activation-required messaging, and CSRF-protected signup
 - [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint, DB-synced remaining login-attempt messaging, and CSRF-protected login
 - [x] `front-server.js` - static file server plus same-origin API proxy, including media requests that the API authorizes before MinIO access
-- [x] All served HTML pages now receive an injected lower-right `Visitors:` counter that copies the computed footer typography/color treatment and stays fixed to the viewport edge across screen sizes
+- [x] All served HTML pages now receive a shared in-flow footer shell with a lower-right `Visitors:` counter, including standalone pages that did not define their own footer before
 - [x] User-visible version labels now render from the shared package SemVer (`0.4.1`) instead of duplicated hardcoded footer/log strings
 - [x] Main auth flows now surface rate-limit hits as warning toasts with retry timing
 - [x] Logout clears all authentication fields and cached account labels from the visible DOM; login forms disable browser autofill hints

@@ -47,6 +47,11 @@ All dependency versions must follow the project policy defined in `.clinerules/0
 
 ## Application Version
 
+- `0.4.17` (2026-07-14) - PATCH UI release. The shared footer shell now stays in the normal document flow instead of being pinned to the viewport, and a responsive content wrapper keeps the centered version label plus right-aligned `Visitors:` counter from overlapping page content on desktop or mobile.
+- `0.4.16` (2026-07-14) - PATCH UI release. The web runtime now injects one shared fixed footer shell across HTML pages, including standalone pages without their own footer, and lays out the centered version text plus right-pinned `Visitors:` counter through a deterministic grid instead of post-render footer mutation.
+- `0.4.15` (2026-07-14) - PATCH UI release. The shared visitor counter now lives inside the fixed footer itself, preserving the centered version text while pinning the visitor label to the far right of the same footer row.
+- `0.4.14` (2026-07-14) - PATCH UI release. The shared visitor counter now renders inside a full-width fixed bottom bar that right-aligns directly from the viewport edge, avoiding previous desktop positioning drift.
+- `0.4.13` (2026-07-14) - PATCH UI release. The shared visitor counter is now anchored directly to the physical right edge of the viewport, with only safe-area protection and footer-aligned vertical spacing.
 - `0.4.12` (2026-07-14) - PATCH UI release. The shared visitor counter now uses a fixed bottom dock that aligns to the footer padding and keeps the `Visitors:` label pinned to the right edge of the viewport on different screen sizes.
 - `0.4.11` (2026-07-14) - PATCH UI release. The shared visitor counter now sits in the lower-right viewport corner, shows the compact `Visitors:` label, and copies the rendered footer typography/colors for consistent presentation across static HTML pages.
 - `0.4.10` (2026-07-14) - PATCH analytics release. Static HTML pages now show a shared bottom-left unique visitor counter backed by PostgreSQL, with unique visitors keyed by HMAC-SHA256 hashes of normalized client IPs instead of raw addresses.

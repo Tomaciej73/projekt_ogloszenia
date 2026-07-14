@@ -240,6 +240,8 @@ apps/api/src/
 ### 22. Unique Visitor Counter Pattern
 - The web runtime injects one shared counter widget into every served HTML page instead of duplicating markup across individual static files.
 - The widget calls the same-origin `GET /site-stats/visitors` route, so browser pages stay on the existing proxy/security model and do not need a separate analytics origin.
-- The widget now uses a full-width fixed bottom dock that right-aligns the counter while copying the computed `footer` padding/font/color styles at runtime, so it stays pinned to the viewport edge and visually level with the footer without duplicating per-page CSS constants.
+- The web runtime now normalizes every served HTML page to the same footer shell. Existing footers are replaced with that structure, and pages without a footer receive one automatically.
+- A small runtime script wraps the pre-footer page content into a flexible `content -> footer` column so the footer remains in the normal document flow instead of floating over the viewport.
+- The footer shell uses a three-column grid (`1fr auto 1fr`) on wider screens so the version label stays centered while the `Visitors:` text remains right-aligned; on narrow screens it collapses into stacked rows to avoid overlap.
 - The API normalizes the client IP, derives an HMAC-SHA256 hash with the existing session secret, and stores only that hash in PostgreSQL (`UniqueSiteVisitor`).
 - The unique constraint on `ipHash` makes the counter idempotent for repeat visits from the same address; reloads update `lastSeenAt` but do not increase the total visitor count.

@@ -8,6 +8,7 @@ const { config } = require("./runtime-config");
 const { APP_VERSION } = require("@multiportal/config/app-version");
 
 const API_PROXY_URL = config.API_PROXY_URL;
+const DEFAULT_GLOBAL_FOOTER_LABEL = `MultiPortal Listing Manager v${APP_VERSION} - Development Mode`;
 const API_ROUTE_PREFIXES = [
   "/auth",
   "/listings",
@@ -49,49 +50,166 @@ function injectNonceIntoHtml(html, nonce) {
     .replace(/<style(?![^>]*\bnonce=)/g, `<style nonce="${nonce}"`);
 }
 
+function buildGlobalFooterShell(labelHtml, existingAttributes = "") {
+  const normalizedLabelHtml = String(labelHtml || "").trim() || DEFAULT_GLOBAL_FOOTER_LABEL;
+  const classMatch = existingAttributes.match(/\bclass\s*=\s*["']([^"']*)["']/i);
+  const existingClasses = classMatch ? classMatch[1].trim() : "";
+  const mergedClasses = ["global-app-footer", existingClasses].filter(Boolean).join(" ");
+  const attributesWithoutClass = existingAttributes.replace(/\s*\bclass\s*=\s*["'][^"']*["']/i, "");
+
+  return `<footer${attributesWithoutClass} class="${mergedClasses}" data-global-footer-shell="true"><span class="global-footer-balance" aria-hidden="true"></span><span class="global-footer-label">${normalizedLabelHtml}</span><span class="global-visitor-counter" id="globalVisitorCounter" aria-live="polite">Visitors: --</span></footer>`;
+}
+
+function ensureGlobalFooterShell(html) {
+  if (html.includes('data-global-footer-shell="true"')) {
+    return html;
+  }
+
+  const footerPattern = /<footer([^>]*)>([\s\S]*?)<\/footer>/i;
+  if (footerPattern.test(html)) {
+    return html.replace(footerPattern, (_, attributes = "", content = "") => buildGlobalFooterShell(content, attributes));
+  }
+
+  const footerMarkup = buildGlobalFooterShell(DEFAULT_GLOBAL_FOOTER_LABEL);
+  if (html.includes("</body>")) {
+    return html.replace("</body>", `${footerMarkup}\n</body>`);
+  }
+
+  return `${html}\n${footerMarkup}`;
+}
+
 function buildVisitorCounterMarkup(nonce) {
   return `
-  <div
-    id="globalVisitorCounterDock"
-    aria-live="polite"
-    style="position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;justify-content:flex-end;align-items:flex-end;padding:0 max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));pointer-events:none;visibility:hidden;"
-  >
-    <div
-      id="globalVisitorCounter"
-      style="display:inline-flex;align-items:center;justify-content:flex-end;max-width:min(100%, 22rem);text-align:right;white-space:nowrap;"
-    >Visitors: --</div>
-  </div>
-  <script nonce="${nonce}">
-    (function () {
-      const visitorCounterDock = document.getElementById("globalVisitorCounterDock");
-      const visitorCounter = document.getElementById("globalVisitorCounter");
-      if (!visitorCounterDock || !visitorCounter) return;
-      const footer = document.querySelector("footer");
-      const footerStyles = footer ? window.getComputedStyle(footer) : null;
+  <style nonce="${nonce}">
+    footer.global-app-footer {
+      width: 100%;
+      margin: 0 !important;
+      padding: 1rem max(0.75rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(0.75rem, env(safe-area-inset-left, 0px)) !important;
+      display: grid !important;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: center;
+      gap: 1rem;
+      flex: 0 0 auto;
+      box-sizing: border-box;
+      text-align: center !important;
+    }
 
-      if (footerStyles) {
-        visitorCounterDock.style.paddingRight = footerStyles.paddingRight;
-        visitorCounterDock.style.paddingBottom = footerStyles.paddingBottom;
-        visitorCounterDock.style.paddingLeft = footerStyles.paddingLeft;
-        visitorCounter.style.color = footerStyles.color;
-        visitorCounter.style.fontSize = footerStyles.fontSize;
-        visitorCounter.style.fontFamily = footerStyles.fontFamily;
-        visitorCounter.style.fontWeight = footerStyles.fontWeight;
-        visitorCounter.style.letterSpacing = footerStyles.letterSpacing;
-        visitorCounter.style.lineHeight = footerStyles.lineHeight;
-      } else {
-        visitorCounterDock.style.paddingRight = "1rem";
-        visitorCounterDock.style.paddingBottom = "1rem";
-        visitorCounterDock.style.paddingLeft = "1rem";
-        visitorCounter.style.color = "rgba(255,255,255,0.3)";
-        visitorCounter.style.fontSize = "0.85rem";
-        visitorCounter.style.fontFamily = "system-ui, -apple-system, sans-serif";
-        visitorCounter.style.fontWeight = "400";
-        visitorCounter.style.letterSpacing = "normal";
-        visitorCounter.style.lineHeight = "1.4";
+    footer.global-app-footer .global-footer-balance {
+      min-width: 0;
+    }
+
+    footer.global-app-footer .global-footer-label {
+      grid-column: 2;
+      justify-self: center;
+      min-width: 0;
+      max-width: min(100%, 70vw);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    footer.global-app-footer .global-visitor-counter {
+      grid-column: 3;
+      justify-self: end;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 720px) {
+      footer.global-app-footer {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.35rem;
+        padding-top: 0.85rem !important;
+        padding-bottom: max(0.85rem, env(safe-area-inset-bottom, 0px)) !important;
       }
 
-      visitorCounterDock.style.visibility = "visible";
+      footer.global-app-footer .global-footer-balance {
+        display: none;
+      }
+
+      footer.global-app-footer .global-footer-label {
+        grid-column: 1;
+        justify-self: center;
+        max-width: 100%;
+        white-space: normal;
+        line-height: 1.4;
+        text-align: center;
+      }
+
+      footer.global-app-footer .global-visitor-counter {
+        grid-column: 1;
+        justify-self: end;
+        width: 100%;
+        text-align: right;
+      }
+    }
+  </style>
+  <script nonce="${nonce}">
+    (function () {
+      const body = document.body;
+      const footer = document.querySelector("footer.global-app-footer");
+      const visitorCounter = document.getElementById("globalVisitorCounter");
+      if (!body || !footer || !visitorCounter || footer.dataset.visitorCounterReady === "true") return;
+
+      const bodyStyles = window.getComputedStyle(body);
+      const originalDisplay = bodyStyles.display;
+      const originalAlignItems = bodyStyles.alignItems;
+      const originalJustifyContent = bodyStyles.justifyContent;
+      const originalFlexDirection = bodyStyles.flexDirection;
+      const originalGap = bodyStyles.gap;
+      const originalGridTemplateColumns = bodyStyles.gridTemplateColumns;
+      const originalGridTemplateRows = bodyStyles.gridTemplateRows;
+      const originalPlaceItems = bodyStyles.placeItems;
+      const originalPlaceContent = bodyStyles.placeContent;
+      const contentWrapper = document.createElement("div");
+      let currentNode = body.firstChild;
+      let movedNodes = 0;
+
+      contentWrapper.className = "global-page-content";
+      contentWrapper.style.flex = "1 0 auto";
+      contentWrapper.style.minHeight = "0";
+      contentWrapper.style.width = "100%";
+      contentWrapper.style.boxSizing = "border-box";
+
+      while (currentNode && currentNode !== footer) {
+        const nextNode = currentNode.nextSibling;
+        if (!(currentNode.nodeType === Node.TEXT_NODE && !currentNode.textContent.trim())) {
+          contentWrapper.appendChild(currentNode);
+          movedNodes += 1;
+        }
+        currentNode = nextNode;
+      }
+
+      if (movedNodes > 0) {
+        body.insertBefore(contentWrapper, footer);
+      }
+
+      body.style.minHeight = "100vh";
+      body.style.display = "flex";
+      body.style.flexDirection = "column";
+      body.style.alignItems = "stretch";
+      body.style.justifyContent = "flex-start";
+
+      if (originalDisplay === "flex") {
+        contentWrapper.style.display = "flex";
+        contentWrapper.style.flexDirection = originalFlexDirection;
+        contentWrapper.style.alignItems = originalAlignItems;
+        contentWrapper.style.justifyContent = originalJustifyContent;
+        if (originalGap && originalGap !== "normal") {
+          contentWrapper.style.gap = originalGap;
+        }
+      } else if (originalDisplay === "grid") {
+        contentWrapper.style.display = "grid";
+        contentWrapper.style.gridTemplateColumns = originalGridTemplateColumns;
+        contentWrapper.style.gridTemplateRows = originalGridTemplateRows;
+        if (originalPlaceItems && originalPlaceItems !== "normal") {
+          contentWrapper.style.placeItems = originalPlaceItems;
+        }
+        if (originalPlaceContent && originalPlaceContent !== "normal") {
+          contentWrapper.style.placeContent = originalPlaceContent;
+        }
+      }
+
+      footer.dataset.visitorCounterReady = "true";
 
       fetch("/site-stats/visitors", {
         method: "GET",
@@ -121,16 +239,17 @@ function buildVisitorCounterMarkup(nonce) {
 
 function injectRuntimeValuesIntoHtml(html, nonce) {
   const htmlWithVersion = html.replaceAll("__APP_VERSION__", APP_VERSION);
-  if (htmlWithVersion.includes('id="globalVisitorCounter"')) {
-    return htmlWithVersion;
+  const htmlWithFooter = ensureGlobalFooterShell(htmlWithVersion);
+  if (htmlWithFooter.includes('data-global-visitor-script="true"')) {
+    return htmlWithFooter;
   }
 
-  const visitorCounterMarkup = buildVisitorCounterMarkup(nonce);
-  if (htmlWithVersion.includes("</body>")) {
-    return htmlWithVersion.replace("</body>", `${visitorCounterMarkup}\n</body>`);
+  const visitorCounterMarkup = buildVisitorCounterMarkup(nonce).replace("<script ", '<script data-global-visitor-script="true" ');
+  if (htmlWithFooter.includes("</body>")) {
+    return htmlWithFooter.replace("</body>", `${visitorCounterMarkup}\n</body>`);
   }
 
-  return `${htmlWithVersion}\n${visitorCounterMarkup}`;
+  return `${htmlWithFooter}\n${visitorCounterMarkup}`;
 }
 
 function buildHtmlSecurityHeaders(nonce) {
