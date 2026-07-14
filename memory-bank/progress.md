@@ -1,7 +1,7 @@
 # Progress
 
 ## Current Status
-**Phase 7 - BullMQ Worker Integrated and Frontend Publication** (complete, with auth/config hardening and expanded security assessment updates through 2026-07-13)
+**Phase 7 - BullMQ Worker Integrated and Frontend Publication** (complete, with auth/config hardening, shared visitor telemetry, and expanded security assessment updates through 2026-07-14)
 
 BullMQ worker processes publication jobs from the Redis queue on port 6739. The API pushes publication jobs to the queue instead of using `setTimeout` mocks. The current runtime stack uses plain Node.js servers for API, web, and worker, with HttpOnly cookie auth backed by JWT signing, SMTP account activation emails, DB-backed login lockout after 5 failed attempts, 6-digit reset codes, stronger password validation across registration and reset flows, and fail-fast runtime config validation shared from `packages/config`.
 
@@ -23,7 +23,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `how_to_run.md` - non-technical setup guide
 - [x] `AGENTS.md` - AI assistant guidance
 
-### Backend API (`apps/api/db-server.js`) v0.4.7
+### Backend API (`apps/api/db-server.js`) v0.4.11
 - [x] `POST /auth/register` - creates inactive accounts, generates activation tokens, sends activation email, and returns activation-required messaging
 - [x] `GET /auth/activate` - validates activation link, activates account, and renders an HTML confirmation page
 - [x] `POST /auth/login` - login with an HttpOnly auth cookie, blocked until account activation, returns DB-backed remaining attempts, and locks the account after 5 failed passwords
@@ -37,6 +37,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] DB-backed forgot-password resend throttling via `passwordResetRequestedAt`
 - [x] Auth rate-limit counters persisted in Redis instead of API process memory
 - [x] `GET /health` - health check with DB status
+- [x] `GET /site-stats/visitors` - registers a first-seen client IP hash and returns the current total unique visitor count
 - [x] `GET/POST /listings` - list/create listing drafts (auth required)
 - [x] `GET/PUT/DELETE /listings/:id` - CRUD operations (auth required)
 - [x] `POST /publication-jobs` - pushes to BullMQ queue (Redis 6739)
@@ -63,6 +64,7 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 - [x] `public/register.html` - standalone registration page with passphrase guidance, activation-required messaging, and CSRF-protected signup
 - [x] `public/login.html` - standalone login page with inactive/locked-account recovery hint, DB-synced remaining login-attempt messaging, and CSRF-protected login
 - [x] `front-server.js` - static file server plus same-origin API proxy, including media requests that the API authorizes before MinIO access
+- [x] All served HTML pages now receive an injected lower-right `Visitors:` counter that copies the computed footer typography/color treatment and stays fixed to the viewport edge across screen sizes
 - [x] User-visible version labels now render from the shared package SemVer (`0.4.1`) instead of duplicated hardcoded footer/log strings
 - [x] Main auth flows now surface rate-limit hits as warning toasts with retry timing
 - [x] Logout clears all authentication fields and cached account labels from the visible DOM; login forms disable browser autofill hints
@@ -187,3 +189,4 @@ BullMQ worker processes publication jobs from the Redis queue on port 6739. The 
 | 2026-07-10 | Controlled dependency pass updated the runtime to `0.4.1` and produced a clean `pnpm audit --json` report | Removes known npm advisory findings without blind version bumps and keeps the repo aligned with verified official versions |
 | 2026-07-10 | Runtime images now use multi-stage `pnpm deploy` packaging and compiled config loading instead of runtime `tsx` | Cuts final Docker image size substantially while keeping fail-fast config validation and healthchecked non-root containers |
 | 2026-07-13 | Marketplace-account API responses use a safe DTO and mock linking is limited to development | Prevents future provider credentials from reaching browser clients and stops production from creating mock marketplace accounts before official OAuth exists |
+| 2026-07-14 | Unique visitor counting is keyed by a hashed normalized client IP stored in PostgreSQL and surfaced through a shared HTML overlay | Prevents reloads from inflating the total while avoiding raw IP persistence in the database |

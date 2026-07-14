@@ -236,3 +236,10 @@ apps/api/src/
 - The API builder normalizes the entrypoint script to LF before it is executed by Alpine `/bin/sh`, so a Windows checkout cannot break migration startup through CRLF line endings.
 - App runtime images switch to the non-root `node` user and declare Docker healthchecks through `apps/api/healthcheck.js`, `apps/web/healthcheck.js`, and `apps/worker/healthcheck.js`.
 - This pattern cut the final image sizes on 2026-07-10 from roughly `2.6 GB` each down to about `751 MB` (API), `731 MB` (web), and `276 MB` (worker); after that change the main remaining disk-pressure source is stale BuildKit cache rather than live runtime volumes.
+
+### 22. Unique Visitor Counter Pattern
+- The web runtime injects one shared counter widget into every served HTML page instead of duplicating markup across individual static files.
+- The widget calls the same-origin `GET /site-stats/visitors` route, so browser pages stay on the existing proxy/security model and do not need a separate analytics origin.
+- The widget is fixed to the lower-right viewport corner and copies the computed `footer` font/color styles at runtime, so the counter stays visually aligned with page chrome without duplicating per-page CSS constants.
+- The API normalizes the client IP, derives an HMAC-SHA256 hash with the existing session secret, and stores only that hash in PostgreSQL (`UniqueSiteVisitor`).
+- The unique constraint on `ipHash` makes the counter idempotent for repeat visits from the same address; reloads update `lastSeenAt` but do not increase the total visitor count.

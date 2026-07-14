@@ -1,5 +1,6 @@
 const http = require("http");
 const crypto = require("crypto");
+const net = require("net");
 const jwt = require("jsonwebtoken");
 const { Queue } = require("bullmq");
 const { PrismaClient } = require("@prisma/client");
@@ -406,14 +407,70 @@ function getMediaBaseUrl(req) {
   return getWebBaseUrl(req);
 }
 
+function normalizeIpAddress(value) {
+  if (typeof value !== "string") return null;
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return null;
+
+  if (trimmedValue === "::1") return "127.0.0.1";
+  if (trimmedValue.startsWith("::ffff:")) {
+    const mappedIpv4 = trimmedValue.slice(7);
+    if (net.isIP(mappedIpv4) === 4) {
+      return mappedIpv4;
+    }
+  }
+
+  return trimmedValue;
+}
+
 function getClientIp(req) {
+  const realIpHeader = req.headers["x-real-ip"];
+  const rawRealIp = Array.isArray(realIpHeader) ? realIpHeader[0] : realIpHeader;
+  const normalizedRealIp = normalizeIpAddress(typeof rawRealIp === "string" ? rawRealIp.split(",")[0] : rawRealIp);
+  if (normalizedRealIp) {
+    return normalizedRealIp;
+  }
+
   const forwardedFor = req.headers["x-forwarded-for"];
   const rawForwardedFor = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
   if (typeof rawForwardedFor === "string" && rawForwardedFor.trim()) {
-    return rawForwardedFor.split(",")[0].trim();
+    const normalizedForwardedIp = normalizeIpAddress(rawForwardedFor.split(",")[0]);
+    if (normalizedForwardedIp) {
+      return normalizedForwardedIp;
+    }
   }
 
-  return String(req.socket?.remoteAddress || req.connection?.remoteAddress || "unknown").trim() || "unknown";
+  return normalizeIpAddress(String(req.socket?.remoteAddress || req.connection?.remoteAddress || "").trim()) || "unknown";
+}
+
+function hashUniqueVisitorIp(ipAddress) {
+  return crypto.createHmac("sha256", config.SESSION_SECRET).update(ipAddress).digest("hex");
+}
+
+async function registerUniqueVisitorAndGetTotal(req) {
+  const now = new Date();
+  const clientIp = getClientIp(req);
+
+  if (clientIp !== "unknown") {
+    await prisma.uniqueSiteVisitor.upsert({
+      where: {
+        ipHash: hashUniqueVisitorIp(clientIp),
+      },
+      update: {
+        lastSeenAt: now,
+      },
+      create: {
+        ipHash: hashUniqueVisitorIp(clientIp),
+        lastSeenAt: now,
+      },
+    });
+  }
+
+  const totalUniqueVisitors = await prisma.uniqueSiteVisitor.count();
+  return {
+    totalUniqueVisitors,
+  };
 }
 
 function buildRateLimitKey(parts) {
@@ -1246,6 +1303,11 @@ const server = http.createServer(async (req, res) => {
     const csrfError = getCsrfValidationError(req, path);
     if (csrfError) {
       return jsonResponse(res, 403, { error: csrfError }, { "Cache-Control": "no-store" });
+    }
+
+    if (path === "/site-stats/visitors" && req.method === "GET") {
+      const visitorSummary = await registerUniqueVisitorAndGetTotal(req);
+      return jsonResponse(res, 200, visitorSummary, { "Cache-Control": "no-store" });
     }
 
     if (path === MEDIA_PROXY_PREFIX || path.startsWith(`${MEDIA_PROXY_PREFIX}/`)) {

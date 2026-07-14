@@ -90,6 +90,15 @@ model AuthSession {
   @@index([userId, revokedAt, expiresAt])
 }
 
+model UniqueSiteVisitor {
+  id          String   @id @default(uuid())
+  ipHash      String   @unique
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  @@index([lastSeenAt])
+}
+
 model Workspace {
   id        String   @id @default(uuid())
   name      String

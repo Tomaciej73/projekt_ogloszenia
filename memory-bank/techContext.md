@@ -47,6 +47,8 @@ All dependency versions must follow the project policy defined in `.clinerules/0
 
 ## Application Version
 
+- `0.4.11` (2026-07-14) - PATCH UI release. The shared visitor counter now sits in the lower-right viewport corner, shows the compact `Visitors:` label, and copies the rendered footer typography/colors for consistent presentation across static HTML pages.
+- `0.4.10` (2026-07-14) - PATCH analytics release. Static HTML pages now show a shared bottom-left unique visitor counter backed by PostgreSQL, with unique visitors keyed by HMAC-SHA256 hashes of normalized client IPs instead of raw addresses.
 - `0.4.4` (2026-07-13) - PATCH security release. Passwords use PBKDF2-HMAC-SHA512 with 220,000 iterations plus rehash-on-login, known breached passphrases are blocked through HIBP k-anonymity, and JWTs are backed by revocable database sessions.
 
 ## Verified Versions
@@ -174,6 +176,7 @@ packages/config/
 - Token fields use `TEXT`-compatible storage, not `varchar(255)`
 - `User` now includes activation, login lockout, password reset, and session invalidation state fields: `isActive`, `activatedAt`, `failedLoginAttempts`, `lockedAt`, `activationTokenHash`, `activationTokenExpiresAt`, `passwordResetCodeHash`, `passwordResetCodeExpiresAt`, `passwordResetRequestedAt`, `passwordResetAttempts`, and `sessionVersion`
 - `AuthSession` stores opaque per-login IDs, timestamps, expiry, revocation, and a bounded user-agent label; it does not store passwords or raw session tokens.
+- `UniqueSiteVisitor` stores only an HMAC-SHA256 hash of the normalized client IP plus first/last-seen timestamps for the shared unique-visitor counter; raw IP addresses are not persisted.
 
 ## Queue System
 

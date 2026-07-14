@@ -1,6 +1,6 @@
 {
   "name": "@multiportal/api",
-  "version": "0.4.9",
+  "version": "0.4.11",
   "private": true,
   "description": "MultiPortal Listing Manager REST API (NestJS)",
   "scripts": {
